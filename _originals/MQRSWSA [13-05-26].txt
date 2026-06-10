@@ -1,0 +1,465 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © michaelpbgilbride
+
+//@version=6
+indicator('MQRSWSA [13-05-26]', shorttitle = 'MQRSWSA', overlay = false)
+indicatorToggle = input.string('MACD Platinum', title='Which indicator do you want to see?', 
+    options=['MACD Platinum', 'QQE Adv', 'RSI + Stochastic', 'Weighted Green-Red Count', 'Synthetic', 'ATR'], 
+    group='INDICATOR SELECTION')
+showMACD = indicatorToggle == "MACD Platinum"
+showQQE = indicatorToggle == "QQE Adv"
+showATR = indicatorToggle == "ATR"
+showWGRC = indicatorToggle == "Weighted Green-Red Count"
+showSO = indicatorToggle == "Synthetic"
+showRSIStoch = indicatorToggle == "RSI + Stochastic"
+
+// --- FUNCTIONS START ---
+dema(src, len) =>   // Double EMA
+    ma_1 = ta.ema(src, len)
+    ma_2 = ta.ema(ma_1, len)
+    (2 * ma_1) - ma_2
+
+tema(src, len) =>   // Triple EMA
+    ma_1 = ta.ema(src, len)
+    ma_2 = ta.ema(ma_1, len)
+    ma_3 = ta.ema(ma_2, len)
+    3 * (ma_1 - ma_2) + ma_3
+
+hma(src, len) =>    //Hull MA
+    len1 = math.max(1, math.floor(len / 2))
+    len2 = math.max(1, math.round(math.sqrt(len)))
+    ta.wma(2 * ta.wma(src, len1) - ta.wma(src, len), len2)
+
+ehma(src, len) =>   // Exponential Hull MA
+    len1 = math.max(1, math.floor(len / 2))
+    len2 = math.max(1, math.floor(math.sqrt(len)))
+    ta.ema(2 * ta.ema(src, len1) - ta.ema(src, len), len2)
+
+zlweak(src, len) => // Weak Zero-Lag MA
+    lag = math.floor((len - 1) / 2)
+    srcAdj = src + (src - nz(src[lag], src))
+    ta.ema(srcAdj, len)
+
+zlstrong(src, len, gain_limit) =>   // Strong Zero-Lag MA
+    // Initialize variables
+    alpha = 0.0
+    gain = 0.0
+    best_gain = 0.0
+    early_cross = 0.0
+    error = 0.0
+    least_error = 1000000.0
+    _ema = 0.0 
+
+    // Calculate EMA
+    alpha := 2 / (len + 1)
+    _ema := ta.ema(src, len)
+
+    // Find optimal gain
+    for gain_value = -gain_limit to gain_limit by 1
+        gain := gain_value / 10
+        early_cross := alpha * (_ema + gain * (src - nz(early_cross[1], src))) + (1 - alpha) * nz(early_cross[1], src)
+        error := src - early_cross
+        if math.abs(error) < least_error
+            least_error := math.abs(error)
+            best_gain := gain
+            best_gain
+
+    // Calculate and return 
+    early_cross := alpha * (_ema + best_gain * (src - nz(early_cross[1], src))) + (1 - alpha) * nz(early_cross[1], src)
+    early_cross
+
+superSmoother(src, len) =>  // Ehlers Super Smoother
+    a = math.exp(-1.414 * math.pi / len)
+    b = 2 * a * math.cos(1.414 * math.pi / len)
+    c2 = b
+    c3 = -a * a
+    c1 = 1 - c2 - c3
+    float ss = 0.0
+    ss := c1 * (src + nz(src[1])) / 2 + c2 * nz(ss[1]) + c3 * nz(ss[2])
+    ss
+
+chooseEMA(source, length, _type) =>
+    switch _type
+        "EMA" => ta.ema(source, length)
+        "DEMA" => dema(source, length)
+        "TEMA" => tema(source, length)
+        "HMA" => hma(source, length)
+        "EHMA" => ehma(source, length)
+        "Zero-Lag Weak" => zlweak(source, length)
+        "SuperSmoother" => superSmoother(source, length)
+
+ehlersRSIH(source, length) =>
+    var float PIx2 = 2 * math.pi
+    // Accumulate "Closes Up" and "Closes Down"
+    float cu = 0.0
+    float cd = 0.0
+    for count = 1 to length
+        change = source[count] - source[count - 1]
+        absChange = math.abs(change)
+        cosPart = math.cos(PIx2 * count / (length + 1))
+    
+        if change < 0
+            cu := cu + (1 - cosPart) * absChange
+        else if change > 0
+            cd := cd + (1 - cosPart) * absChange
+
+    result = nz((cu - cd) / (cu + cd))
+
+chooseRSI(source, length, _type) =>
+    switch _type
+        "RSI" => ta.rsi(source, length)
+        "Ehlers' RSIH" => ehlersRSIH(source, length)
+
+//makeQQE(source_QQE, RSIPeriod, SF, WP, EMAtype, blueMACD, orgMACD) =>
+makeQQE(source_QQE, RSIPeriod, SF, WP, EMAtype, RSItype, blueMACD, orgMACD) =>
+    WildersPeriod = (RSIPeriod * 2) - 1
+    // rsi = ta.rsi(source_QQE, RSIPeriod) // The basic RSI code
+    rsi = chooseRSI(source_QQE, RSIPeriod, RSItype)
+    RsiMa = chooseEMA(rsi, SF, EMAtype)
+    AtrRsi = math.abs (RsiMa[1] - RsiMa) // The absolute difference between the smoothed RSIs, bar by bar
+    MaAtrRsi = chooseEMA(AtrRsi, WildersPeriod, EMAtype) // The smoothed AtrRsi using an EMA
+    dar = chooseEMA(MaAtrRsi, WildersPeriod, EMAtype) * WP // A double-smoothed AtrRsi, then multiplied by the WP
+
+    newShortBand = RsiMa + dar
+    float rsi0 = 0.0
+    rsi0 := RsiMa[1] < rsi0[1] and RsiMa < rsi0[1] ? math.min(rsi0[1], newShortBand) : newShortBand
+
+    newLongBand = RsiMa - dar
+    float rsi1 = 0.0
+    rsi1 := RsiMa[1] > rsi1[1] and RsiMa > rsi1[1] ? math.max(rsi1[1], newLongBand) : newLongBand
+
+    float trend = 0.0
+    bool cross0 = ta.cross(RsiMa, rsi0[1])
+    bool cross1 = ta.cross(RsiMa, rsi1[1])
+    trend := cross0 ? 1 : cross1 ? -1 : nz(trend[1], 1)
+    secondRSILine = trend == 1 ? rsi1 : rsi0
+
+    [RsiMa, secondRSILine]
+// --- FUNCTIONS END ---
+
+
+////////////// MACD Platinum ///////////////
+fastLength = input.int(defval=12, title='Fast (dflt: 12)', step=1, group='MACD Settings')
+slowLength = input.int(defval=26, title='Slow (dflt: 26)', step=1, group='MACD Settings')
+smoothInput = input.int(defval=9, title='Smooth (dflt: 9)', step=1, group='MACD Settings')
+source_MACD = input.source(defval = close, title = 'Source (dflt: close)', group = "MACD Settings")
+EMAtypeMACD = input.string(defval = "DEMA", title = "Smoothing Function (dflt: DEMA)", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "MACD Settings")
+
+zerolagEMA = chooseEMA(source_MACD, fastLength, EMAtypeMACD) // Fast line
+zerolagslowMA = chooseEMA(source_MACD, slowLength, EMAtypeMACD) // Slow line
+blueMACD = zerolagEMA - zerolagslowMA  // MACD line
+orgMACD = chooseEMA(blueMACD, smoothInput, EMAtypeMACD) // Signal line
+
+hist = blueMACD - orgMACD
+circleYPosition = orgMACD * 1
+
+plot(showMACD ? blueMACD : na, color=color.new(color.blue, 0), linewidth=1, title='MACD Line')
+plot(showMACD ? orgMACD : na, color=color.new(color.orange, 0), linewidth=1, title='MACD Signal')
+hline(showMACD ? 0.0 : na, color=color.gray, linestyle=hline.style_dashed, title = "MACD Zero Level")
+plot(ta.crossover(blueMACD, orgMACD) and barstate.isconfirmed ? showMACD ? circleYPosition : na : na, style=plot.style_circles, linewidth=4, color = hist > 0 ? color.new(color.aqua,0) : na, title='Upside MACD Cross')
+plot(ta.crossunder(blueMACD, orgMACD) and barstate.isconfirmed ? showMACD ? circleYPosition : na : na, style=plot.style_circles, linewidth=4, color = hist < 0 ? color.new(#ff0000,0) : na, title='Downside MACD Cross')
+
+////////////// QQE ///////////////
+RSIPeriod = input.int(defval=10, title='RSI Period (dflt: 10 | alt: 8)', step=1, group='QQE Settings')
+SF = input.int(14, title='SF (dflt: 14 | alt: 1)', step=1, group='QQE Settings') //Smoothing Factor?
+WP = input.float(2.0, title='WP (dflt: 2 | alt: 3)', step=0.025, group='QQE Settings') //Weighting Parameter?
+source_QQE = input.source(defval = close, title = 'Source (dflt: close)', group = "QQE Settings")
+EMAtypeQQE = input.string(defval = "EMA", title = "Smoothing Function (dflt: EMA)", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "QQE Settings")
+RSItypeQQE = input.string(defval = "RSI", title = "RSI Type (dflt: RSI)", options = ["RSI", "Ehlers' RSIH"], group = "QQE Settings")
+
+[RsiMa, secondRSILine] = makeQQE(source_QQE, RSIPeriod, SF, WP, EMAtypeQQE, RSItypeQQE, blueMACD, orgMACD)
+
+plot(showQQE ? RsiMa : na, color=color.new(color.purple, 0), linewidth=1, title='QQE RSI MA')  // The smoothed RSI using an EMA to smooth it
+plot(showQQE ? secondRSILine : na, color=color.new(color.green, 0), linewidth=2, title='QQE 2nd RSI')
+hline(RSItypeQQE == "RSI" and showQQE ? 65 : na, color=color.gray, title = "QQE Top Level")
+hline(RSItypeQQE == "RSI" and showQQE ? 50 : na, color=color.new(color.gray, 30), title = "QQE Centre Level")
+hline(RSItypeQQE == "RSI" and showQQE ? 35 : na, color=color.gray, title = "QQE Bottom Level")
+
+
+////////////// RSI + Stochastic ///////////////
+// RSI
+showRSI = input.bool(true, title = "Show RSI", group = "RSI Settings")
+rsiLengthInput = input.int(14, minval=1, title="RSI Length", group="RSI Settings")
+rsiSourceInput = input.source(close, "Source (dflt: close)", group="RSI Settings")
+
+change = ta.change(rsiSourceInput)
+up = ta.rma(math.max(change, 0), rsiLengthInput)
+down = ta.rma(-math.min(change, 0), rsiLengthInput)
+rsi2 = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+
+rsiPlot = plot(showRSIStoch and showRSI ? rsi2: na, "RSI", color=color.purple)
+rsiUpperBand = hline(showRSIStoch and showRSI ? 70 : na, "RSI Upper Band", color=#787B86)
+midline = hline(showRSIStoch and showRSI ? 50 : na, "RSI Middle Band", color=color.new(#787B86, 50))
+rsiLowerBand = hline(showRSIStoch and showRSI ? 30 : na, "RSI Lower Band", color=#787B86)
+fill(rsiUpperBand, rsiLowerBand, color=color.rgb(255, 255, 255, 95), title="RSI Background Fill")
+midLinePlot = plot(showRSIStoch and showRSI ? 50 : na, color = na, editable = false, display = display.none)
+fill(rsiPlot, midLinePlot, 100, 70, top_color = color.new(color.green, 0), bottom_color = color.new(color.green, 100),  title = "Overbought Gradient Fill")
+fill(rsiPlot, midLinePlot, 30,  0,  top_color = color.new(color.red, 100), bottom_color = color.new(color.red, 0),      title = "Oversold Gradient Fill")
+
+// Smoothing MA inputs
+maTypeInput = input.string("None", "Smoothing Type", options = ["None", "SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group="RSI Settings", display = display.none)
+maLengthInput = input.int(14, "Smoothing Length", group="RSI Settings", display = display.none, active = maTypeInput != "None")
+var enableMA = maTypeInput != "None"
+
+// Smoothing MA Calculation
+ma(source, length, MAtype) => 
+    switch MAtype
+        "SMA"                   => ta.sma(source, length)
+        "EMA"                   => ta.ema(source, length)
+        "SMMA (RMA)"            => ta.rma(source, length)
+        "WMA"                   => ta.wma(source, length)
+        "VWMA"                  => ta.vwma(source, length)
+
+// Smoothing MA plots
+smoothingMA = enableMA ? ma(rsi2, maLengthInput, maTypeInput) : na
+plot(showRSIStoch ? smoothingMA : na, "RSI-based MA", color=color.rgb(206, 188, 27), display = enableMA ? display.all : display.none, editable = enableMA)
+
+
+// Stochastic
+showStoch = input.bool(true, title = "Show Stochastic", group = "Stochastic Settings")
+periodK = input.int(14, title="%K Length", minval=1, group="Stochastic Settings")
+smoothK = input.int(3, title="%K Smoothing", minval=1, group="Stochastic Settings")
+periodD = input.int(3, title="%D Smoothing", minval=1, group="Stochastic Settings")
+k = ta.sma(ta.stoch(close, high, low, periodK), smoothK)
+d = ta.sma(k, periodD)
+plot(showRSIStoch and showStoch ? k : na, title="RSI %K", color=#2962FF)
+plot(showRSIStoch and showStoch ? d : na, title="RSI %D", color=#FF6D00)
+h0 = hline(showRSIStoch and showStoch  ? 80 : na, "Stochastic Upper Band", color=#787B86)
+hline(showRSIStoch and showStoch ? 50 : na, "Stochastic Middle Band", color=color.new(#787B86, 50))
+h1 = hline(showRSIStoch and showStoch ? 20 : na, "Stochastic Lower Band", color=#787B86)
+fill(h0, h1, color=color.rgb(255, 255, 255, 99), title="Stochastic Background")
+
+
+////////////// Weighted Green-Red Count ///////////////
+chooseSmoothing(source, length, _type) =>
+    switch _type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "DEMA" => dema(source, length)
+        "TEMA" => tema(source, length)
+        "WMA"  => ta.wma(source, length)
+        "HMA"  => ta.hma(source, length)
+        "EHMA" => ehma(source, length)
+        "Zero-Lag Weak" => zlweak(source, length)
+        "SuperSmoother" => superSmoother(source, length)
+
+chooseWeighting(source, length, _type) =>
+    switch _type
+        "WMA" => ta.wma(source, length)
+        "HMA" => ta.hma(source, length)
+
+// --- Inputs ---
+string weighting_type = input.string(defval = "WMA", title = "Weighting MA (dflt: WMA)", 
+    options = ["WMA", "HMA"], group = "WGRC Settings")
+int wgrc_len = input.int(14, "Length (dflt: 14)", minval=1, group = "WGRC Settings")
+string signal_type = input.string(defval = "Binary", title = "Signal Calculation (dflt: Binary)", 
+     options = ["Binary", "Candle Body", "Normalised Body"],
+     group = "WGRC Settings")
+
+bool showsmooth = input.bool(false, title = "Show Smoothened WGRC", group = "WGRC Settings")
+string smoothing_type = input.string(defval = "SMA", title = "Smoothing MA (dflt: SMA)", 
+    options = ["SMA", "EMA", "DEMA", "TEMA", "WMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+    group = "WGRC Settings")
+int smooth = input.int(3, "Smoothing Factor (dflt: 3)", minval=2, group = "WGRC Settings")
+
+// --- Logic ---
+// 1. Define the signal: 1 if Green (Close > Open), -1 if Red (Close < Open)
+// We use 0 for Dojis (Close == Open) to remain neutral
+//float signal = close > open ? 1.0 : (close < open ? -1.0 : 0.0)
+float candle_range = high - low
+
+float wgrc_signal = switch signal_type
+    "Binary" => close > open ? 1.0 : (close < open ? -1.0 : 0.0)
+    "Candle Body" => close - open
+    "Normalised Body" => 
+         // Calculate the body as a percentage of total candle range
+         // We add a check to prevent division by zero on "flat" bars
+         candle_range != 0 ? (close - open) / candle_range : 0.0
+    => 0.0 // Fallback
+
+// 2. Calculate the Weighted Moving Average (WMA)
+// ta.wma automatically applies the (length*x + (length-1)*x[1]...) formula
+float wgrc = chooseWeighting(wgrc_signal, wgrc_len, weighting_type)
+// Smoothened version
+float smooth_wgrc = chooseSmoothing(wgrc, smooth, smoothing_type)
+
+// --- Plotting ---
+// Plot the oscillator
+plot(showWGRC ? wgrc : na, "WGRC", color=color.new(color.blue, 0), linewidth=2)
+plot(showWGRC and showsmooth ? smooth_wgrc : na, "Smoothened WGRC", color=color.new(color.orange, 0), linewidth=2)
+
+// Add a zero line for reference
+hline(showWGRC ? 0 : na, "Zero Line", color=color.gray, linestyle=hline.style_dashed)
+
+// --- Crossover Logic ---
+// Detect crossover (WGRC goes above Smooth) and crossunder (WGRC goes below Smooth)
+crossUp = ta.crossover(wgrc, smooth_wgrc)
+bool bullCross = showsmooth and crossUp
+crossDown = ta.crossunder(wgrc, smooth_wgrc)
+bool bearCross = showsmooth and crossDown
+// Plot Circles at the point of the crossover
+// We plot at the smooth_wgrc level so the circle sits right on the intersection
+plot(showWGRC and bullCross ? smooth_wgrc : na, "Bullish Cross", 
+     color = color.new(color.lime, 0), 
+     style = plot.style_circles, 
+     linewidth = 4)
+
+plot(showWGRC and bearCross ? smooth_wgrc : na, "Bearish Cross", 
+     color = color.new(color.red, 0), 
+     style = plot.style_circles, 
+     linewidth = 4)
+
+// Optional: Fill background based on strength
+fill_color = wgrc > 0 ? color.new(color.green, 87.5) : color.new(color.red, 87.5)
+bgcolor(showWGRC ? fill_color: na)
+
+
+////////////// Synthetic Oscillator ///////////////
+
+//#region Inputs
+
+float src = input.source(close, "Source (dflt: close)", group='Synthetic Oscillator Settings')
+int lb = input.int(15, "Lower Bound", minval = 3, group='Synthetic Oscillator Settings')
+int ub = input.int(25, "Upper Bound", minval = 4, group='Synthetic Oscillator Settings')
+
+if lb >= ub
+    runtime.error("The 'Upper Bound' value must be greater than the 'Lower Bound' value.")
+
+//#endregion
+
+//#region Functions
+
+// @function The SuperSmoother is a second-order infinite im-
+// pulse response (IIR) filter, meaning that it uses two
+// previous calculations of the filter output in the cur-
+// rent calculation of the filter response.
+// @param   src     Source series
+// @param   period  Critical period
+// @returns Smoothed series
+SuperSmoother (float src, int period) =>
+    float q = math.exp(-1.414*math.pi/period)
+    float c1 = 2.0*q*math.cos(1.414*math.pi/period)
+    float c2 = q*q
+    float a0 = (1.0 - c1 + c2)/2
+    float ss = src
+    if bar_index >= 4
+        ss := a0*(src + src[1]) + 
+              c1*ss[1] - c2*ss[2]
+    ss
+
+// @function      The UltimateSmoother is a filter created
+//                by subtracting the response of a high-pass 
+//                filter from that of an all-pass filter.
+// @param src     Source series.
+// @param period  Critical period.
+// @returns       Smoothed series
+UltimateSmoother (float src, int period) =>
+    float q = math.exp(-1.414*math.pi/period)
+    float c1 = 2.0*q*math.cos(1.414*math.pi/period)
+    float c2 = q*q
+    float a0 = (1.0 + c1 + c2)/4.0
+    float us = src
+    if bar_index >= 4
+        us := (1.0 - a0)*src + 
+              (2.0*a0 - c1)*src[1] + 
+              (c2 - a0)*src[2] + 
+              c1*nz(us[1]) - c2*nz(us[2])
+    us
+
+// @function Root Mean Square
+RMS (float Source, int Length) =>
+    float s2 = math.sum(Source*Source, Length)
+    if s2 != 0
+        math.sqrt(s2/Length)
+    else
+        0.0
+
+// @function High Pass Filter
+HP (float src, int Period) =>
+    float Q = math.exp(-1.414*math.pi/Period)
+    float c1 = 2.0*Q*math.cos(1.414*math.pi/Period)
+    float c2 = Q*Q
+    float a0 = (1 + c1 + c2)/4
+    float hp = 0.0
+    if bar_index >= 4
+        hp := nz(a0*(src - 2*src[1] + 
+              src[2]) + c1*hp[1] - c2*hp[2])
+    hp
+
+//@function Hann Filter
+Hann (float src, int length) =>
+    float filt = 0.0
+    float coef = 0.0
+    for c = 1 to length
+        float p = math.cos(2*math.pi*c/(length + 1))
+        filt += 1.0 - nz(p*src[c-1])
+        coef += 1.0 - p
+    coef != 0.0 ? filt/coef : 0.0
+
+// @function Synthetic Oscillator.
+// @param   src     Source Series.
+// @param   LB      Lower Bound.
+// @param   UB      Upper Bound.
+// @param   length  Length period.
+// @returns Synthetic Oscillator.
+SO (float src=close, int LB=15, int UB=25) =>
+    float price = Hann(src,12)
+    // Real component is bandpass filtered and normalized
+    float hp = HP(price, UB)
+    float lp = SuperSmoother(hp, LB)
+    float rms = RMS(lp, 100)
+    float re = rms != 0.0 ? lp/rms : 0.0
+    // Imaginary component is rate of change normalized.
+    float roc = re - re[1]
+    float qrms = RMS(roc, 100)
+    float im = qrms != 0.0 ? roc/qrms : 0.0
+    // Solve rate of change of arctangent.
+    float denom = roc*im - (im - im[1])*re
+    float dc = denom != 0.0 ? 
+      6.28*(re*re + im*im)/denom : 0.0
+    // Limit range of measured values.
+    dc := math.max(LB, math.min(UB, dc))
+    int mid = int(math.sqrt(LB*UB))
+    // Create a Bandpass filter at the Average Dominant
+    // Cycle Period.
+    float hp2 = HP(src, mid)
+    float bp = UltimateSmoother(hp2, mid)
+    // Cumulate Phase and force reset at 0 and 180 degrees
+    var float ph = 0.0
+    ph += 2*math.pi/dc
+    bool xo = ta.crossover(bp, 0.0)
+    bool xu = ta.crossunder(bp, 0.0)
+    switch
+        xo => ph := math.pi/dc
+        xu => ph := math.pi + math.pi/dc
+    
+    // Synthetic Oscillator is the Sine of the cumulative
+    // phase angle.
+    float so = math.sin(ph)
+    // Remove reset glitch if continuity falls in the 
+    // same quadrant.
+    switch
+        ph > 0.0 and ph < math.pi/2 and so < so[1] =>
+            so := so[1]
+        ph > math.pi and ph < 3*math.pi/2 and so > so[1] => 
+            so := so[1]
+        =>
+            so
+
+//#endregion
+
+//#region Plots
+
+so = SO(src, lb, ub)
+
+plot(showSO ? so: na, "Synthetic Oscillator")
+hline(showSO ? 0: na, "Synthetic Zero Line")
+
+//#endregion
+
+
+////////////// ATR ///////////////
+
+atrLength = input.int(14, title="ATR Length (dflt: 14)", minval=1, group = "ATR Settings")
+atrValue = ta.atr(atrLength)
+plot(showATR ? atrValue : na, title="ATR", color=color.red, linewidth=1)

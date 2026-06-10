@@ -1,0 +1,883 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © michaelpbgilbride
+
+//@version=6
+indicator("Double QMP Filter + Fibonacci Retracement + Divergence for Many Indicators", shorttitle="2QMP FR MD", overlay=true)
+indicatorToggle = input.string('Double QMP', title='Which indicator do you want to see?', options=['Double QMP', 'Fibonacci'], group='INDICATOR SELECTION')
+showQMP = indicatorToggle == "Double QMP"
+showFibonacci = indicatorToggle == "Fibonacci"
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// --- MY FUNCTIONS (Leave Divergences & Fibonacci Functions where they are) ---
+dema(src, len) =>   // Double EMA
+    ma_1 = ta.ema(src, len)
+    ma_2 = ta.ema(ma_1, len)
+    (2 * ma_1) - ma_2
+
+tema(src, len) =>   // Triple EMA
+    ma_1 = ta.ema(src, len)
+    ma_2 = ta.ema(ma_1, len)
+    ma_3 = ta.ema(ma_2, len)
+    3 * (ma_1 - ma_2) + ma_3
+
+hma(src, len) =>    //Hull MA
+    len1 = math.max(1, math.floor(len / 2))
+    len2 = math.max(1, math.round(math.sqrt(len)))
+    ta.wma(2 * ta.wma(src, len1) - ta.wma(src, len), len2)
+
+ehma(src, len) =>   // Exponential Hull MA
+    len1 = math.max(1, math.floor(len / 2))
+    len2 = math.max(1, math.floor(math.sqrt(len)))
+    ta.ema(2 * ta.ema(src, len1) - ta.ema(src, len), len2)
+
+zlweak(src, len) => // Weak Zero-Lag MA
+    lag = math.floor((len - 1) / 2)
+    srcAdj = src + (src - nz(src[lag], src))
+    ta.ema(srcAdj, len)
+
+zlstrong(src, len, gain_limit) =>   // Strong Zero-Lag MA
+    // Initialize variables
+    alpha = 0.0
+    gain = 0.0
+    best_gain = 0.0
+    early_cross = 0.0
+    error = 0.0
+    least_error = 1000000.0
+    _ema = 0.0 
+
+    // Calculate EMA
+    alpha := 2 / (len + 1)
+    _ema := ta.ema(src, len)
+
+    // Find optimal gain
+    for gain_value = -gain_limit to gain_limit by 1
+        gain := gain_value / 10
+        early_cross := alpha * (_ema + gain * (src - nz(early_cross[1], src))) + (1 - alpha) * nz(early_cross[1], src)
+        error := src - early_cross
+        if math.abs(error) < least_error
+            least_error := math.abs(error)
+            best_gain := gain
+            best_gain
+
+    // Calculate and return 
+    early_cross := alpha * (_ema + best_gain * (src - nz(early_cross[1], src))) + (1 - alpha) * nz(early_cross[1], src)
+    early_cross
+
+superSmoother(src, len) =>  // Ehlers Super Smoother
+    a = math.exp(-1.414 * math.pi / len)
+    b = 2 * a * math.cos(1.414 * math.pi / len)
+    c2 = b
+    c3 = -a * a
+    c1 = 1 - c2 - c3
+    float ss = 0.0
+    ss := c1 * (src + nz(src[1])) / 2 + c2 * nz(ss[1]) + c3 * nz(ss[2])
+    ss
+
+chooseEMA(source, length, _type) =>
+    switch _type
+        "EMA" => ta.ema(source, length)
+        "DEMA" => dema(source, length)
+        "TEMA" => tema(source, length)
+        "HMA" => hma(source, length)
+        "EHMA" => ehma(source, length)
+        "Zero-Lag Weak" => zlweak(source, length)
+        "SuperSmoother" => superSmoother(source, length)
+
+ehlersRSIH(source, length) =>
+    var float PIx2 = 2 * math.pi
+    // Accumulate "Closes Up" and "Closes Down"
+    float cu = 0.0
+    float cd = 0.0
+    for count = 1 to length
+        change = source[count] - source[count - 1]
+        absChange = math.abs(change)
+        cosPart = math.cos(PIx2 * count / (length + 1))
+    
+        if change < 0
+            cu := cu + (1 - cosPart) * absChange
+        else if change > 0
+            cd := cd + (1 - cosPart) * absChange
+
+    result = nz((cu - cd) / (cu + cd))
+
+chooseRSI(source, length, _type) =>
+    switch _type
+        "RSI" => ta.rsi(source, length)
+        "Ehlers' RSIH" => ehlersRSIH(source, length)
+
+//makeQQE(source_QQE, RSIPeriod, SF, WP, EMAtype, blueMACD, orgMACD) =>
+makeQQE(source_QQE, RSIPeriod, SF, WP, EMAtype, RSItype, blueMACD, orgMACD) =>
+    WildersPeriod = (RSIPeriod * 2) - 1
+    // rsi = ta.rsi(source_QQE, RSIPeriod) // The basic RSI code
+    rsi = chooseRSI(source_QQE, RSIPeriod, RSItype)
+    RsiMa = chooseEMA(rsi, SF, EMAtype)
+    AtrRsi = math.abs (RsiMa[1] - RsiMa) // The absolute difference between the smoothed RSIs, bar by bar
+    MaAtrRsi = chooseEMA(AtrRsi, WildersPeriod, EMAtype) // The smoothed AtrRsi using an EMA
+    dar = chooseEMA(MaAtrRsi, WildersPeriod, EMAtype) * WP // A double-smoothed AtrRsi, then multiplied by the WP
+
+    newShortBand = RsiMa + dar
+    float rsi0 = 0.0
+    rsi0 := RsiMa[1] < rsi0[1] and RsiMa < rsi0[1] ? math.min(rsi0[1], newShortBand) : newShortBand
+
+    newLongBand = RsiMa - dar
+    float rsi1 = 0.0
+    rsi1 := RsiMa[1] > rsi1[1] and RsiMa > rsi1[1] ? math.max(rsi1[1], newLongBand) : newLongBand
+
+    float trend = 0.0
+    bool cross0 = ta.cross(RsiMa, rsi0[1])
+    bool cross1 = ta.cross(RsiMa, rsi1[1])
+    trend := cross0 ? 1 : cross1 ? -1 : nz(trend[1], 1)
+    secondRSILine = trend == 1 ? rsi1 : rsi0
+
+    longSituation = ta.barssince(ta.crossover(blueMACD,orgMACD)) < ta.barssince(ta.crossunder(blueMACD,orgMACD)) and RsiMa > secondRSILine
+    shortSituation = ta.barssince(ta.crossover(blueMACD,orgMACD)) > ta.barssince(ta.crossunder(blueMACD,orgMACD)) and RsiMa < secondRSILine
+
+    longOverShort = ta.barssince(longSituation)[1] > ta.barssince(shortSituation)[1]
+    shortOverLong = ta.barssince(shortSituation)[1] > ta.barssince(longSituation)[1]
+
+    upSwitch = longSituation and longOverShort and barstate.isconfirmed
+    downSwitch = shortSituation and shortOverLong and barstate.isconfirmed
+    [upSwitch, downSwitch]
+
+bollingerMA(source, length, _type) =>
+    switch _type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "RMA" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.wma(source, length)
+
+makeBB(sourceBB, lengthBB, multiplierBB, MAtypeBB) =>
+    deviance = multiplierBB * ta.stdev(sourceBB, lengthBB)
+    basis = bollingerMA(sourceBB, lengthBB, MAtypeBB)
+    upper = basis + deviance
+    lower = basis - deviance
+    [basis, upper, lower]
+// --- FUNCTIONS END ---
+
+
+
+// QMP Filter
+
+// MACD Programming
+source_MACD = input.source(defval = close, title = 'MACD Source (dflt: close)', group = "Source Settings for QMP FILTER")
+EMAtypeMACD = input.string(defval = "DEMA", title = "MACD Smoothing (dflt: DEMA)", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Source Settings for QMP FILTER")
+source_QQE = input.source(defval = close, title = 'QQE Adv Source (dflt: close)', group = "Source Settings for QMP FILTER")
+EMAtypeQQE = input.string(defval = "EMA", title = "QQE Smoothing (dflt: EMA)", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Source Settings for QMP FILTER")
+RSItypeQQE = input.string(defval = "RSI", title = "QQE RSI Type (dflt: RSI)", options = ["RSI", "Ehlers' RSIH"], group = "Source Settings for QMP FILTER")
+
+fastLength = input.int(defval=12, title='Fast (dflt: 12)', step=1, group='MACD Settings for QMP FILTER')
+slowLength = input.int(defval=26, title='Slow (dflt: 26)', step=1, group='MACD Settings for QMP FILTER')
+smoothInput = input.int(defval=9, title='Smooth (dflt: 9)', step=1, group='MACD Settings for QMP FILTER')
+
+zerolagEMA = chooseEMA(source_MACD, fastLength, EMAtypeMACD) // Fast line
+zerolagslowMA = chooseEMA(source_MACD, slowLength, EMAtypeMACD) // Slow line
+blueMACD = zerolagEMA - zerolagslowMA  // MACD line
+orgMACD = chooseEMA(blueMACD, smoothInput, EMAtypeMACD) // Signal line
+
+
+// QQE Programming
+// --- INPUTS ---
+RSIPeriod_a = input.int(defval=8, title="RSI Period (dflt: 8)", step = 1, group = "1. QQE Settings for QMP FILTER")
+SF_a = input.int(1, title = "SF (dflt: 1)", step = 1, group = "1. QQE Settings for QMP FILTER")
+WP_a = input.float(3.0, title = "WP (dflt: 3)", step = 0.25, group = "1. QQE Settings for QMP FILTER")
+
+showSecondQQE = input.bool(true, title = "Show Second QQE Avd", group = "2. QQE Settings for QMP FILTER")
+RSIPeriod_b = input.int(defval=10, title="RSI Period (dflt: 10)", step = 1, group = "2. QQE Settings for QMP FILTER")
+SF_b = input.int(14, title = "SF (dflt: 14)", step = 1, group = "2. QQE Settings for QMP FILTER")
+WP_b = input.float(2.0, title = "WP (dflt: 2)", step = 0.25, group = "2. QQE Settings for QMP FILTER")
+
+// --- CALL FUNCTION ON INPUTS ---
+[upSwitch_a, downSwitch_a] = makeQQE(source_QQE, RSIPeriod_a, SF_a, WP_a, EMAtypeQQE, RSItypeQQE, blueMACD, orgMACD)
+[upSwitch_b, downSwitch_b] = makeQQE(source_QQE, RSIPeriod_b, SF_b, WP_b, EMAtypeQQE, RSItypeQQE, blueMACD, orgMACD)
+
+// Signals on price chart (Jim Brown's QMP Filter)
+plotchar(upSwitch_a, // showQMP and upSwitch_a ? 1 : na,
+     char="*", color=color.rgb(51, 204, 225), size=size.small,
+     location=location.belowbar, title="1. Buy Signal")
+
+plotchar(downSwitch_a, // showQMP and downSwitch_a ? 1 : na,
+     char="*", color=color.rgb(237, 220, 89), size=size.small,
+     location=location.abovebar, title="1. Sell Signal")
+
+plotchar(showSecondQQE and upSwitch_b ? 1 : na, // upSwitch_b,
+     char="+", color=color.rgb(51, 164, 216), size=size.small,
+     location=location.belowbar, title="2. Buy Signal")
+
+plotchar(showSecondQQE and downSwitch_b ? 1 : na, // downSwitch_b,
+     char="+", color=color.rgb(217, 165, 77), size=size.small,
+     location=location.abovebar, title="2. Sell Signal")
+
+
+// EMAs
+showEMAs = input.bool(true, title = "Show Moving Averages", group = "MA Settings")
+ema50 = ta.ema(close, input.int(50, title="Short EMA (dflt: 50)", step = 1, group = "MA Settings"))
+ema100 = ta.ema(close, input.int(100, title = "Middle EMA (dflt: 100)", step = 1, group = "MA Settings"))
+wma240 = ta.wma(close, input.int(240, title = "Long WMA (dflt: 240)", step = 1, group = "MA Settings"))
+plot(showEMAs ? ema50 : na, color=color.orange, title = "Short EMA", linewidth=2)
+plot(showEMAs ? ema100 : na, color=color.purple, title = "Middle EMA", linewidth=2)
+plot(showEMAs ? wma240 : na, color=color.blue, title = "Long EMA", linewidth=2)
+
+
+// Bollinger Bands
+length_a = input.int(20, title = "Length (dflt: 20)", step = 1, minval=1, group = "1. BOLLINGER BANDS Settings")
+maType_a = input.string("SMA", title = "Basis MA Type (dflt: SMA)", options = ["SMA", "EMA", "RMA", "WMA", "VWMA"], group = "1. BOLLINGER BANDS Settings")
+src_a = input(close, title="Source (dflt: close)", group = "1. BOLLINGER BANDS Settings")
+mult_a = input.float(2.0, step = 0.25, minval=0.001, maxval=50, title="Std Dev (dflt: 2.0)", group = "1. BOLLINGER BANDS Settings")
+colour_a = input.color(color.rgb(240, 175, 142), title = "BB Colour", group = "1. BOLLINGER BANDS Settings")
+colour_a_back = input.color(color.rgb(240, 175, 142, 96) , title = "BB Background", group = "1. BOLLINGER BANDS Settings")
+
+[basis_a, upper_a, lower_a] = makeBB(src_a, length_a, mult_a, maType_a)
+plot(showQMP ? basis_a : na, title = "1. BB Basis", color=colour_a, style=plot.style_circles)
+p1_a = plot(showQMP ? upper_a : na, title = "1. BB Upper", color=colour_a, style=plot.style_circles)
+p2_a = plot(showQMP ? lower_a : na, title = "1. BB Lower", color=colour_a, style=plot.style_circles)
+fill(p1_a, p2_a, color = showQMP ? colour_a_back : na)
+
+showSecondBB = input.bool(false, title = "Show Second Bollinger Band", group = "2. BOLLINGER BANDS Settings")
+length_b = input.int(80, title = "Length (dflt: 80)", step = 1, minval=1, group = "2. BOLLINGER BANDS Settings")
+maType_b = input.string("SMA", title = "Basis MA Type (dflt: SMA)", options = ["SMA", "EMA", "RMA", "WMA", "VWMA"], group = "2. BOLLINGER BANDS Settings")
+src_b = input(close, title="Source (dflt: close)", group = "2. BOLLINGER BANDS Settings")
+mult_b = input.float(3.0, step = 0.25, minval=0.001, maxval=50, title="Std Dev (dflt: 3.0)", group = "2. BOLLINGER BANDS Settings")
+colour_b = input.color(color.rgb(252, 171, 136), title = "BB Colour", group = "2. BOLLINGER BANDS Settings")
+colour_b_back = input.color(color.rgb(252, 171, 136, 96) , title =  "BB Background", group = "2. BOLLINGER BANDS Settings")
+
+[basis_b, upper_b, lower_b] = makeBB(src_b, length_b, mult_b, maType_b)
+plot(showSecondBB and showQMP ? basis_b : na, title = "2. BB Basis", color=colour_b, style=plot.style_circles)
+p1_b = plot(showSecondBB and showQMP ? upper_b : na, title = "2. BB Upper", color=colour_b, style=plot.style_circles)
+p2_b = plot(showSecondBB and showQMP ? lower_b : na, title = "2. BB Lower", color=colour_b, style=plot.style_circles)
+fill(p1_b, p2_b, color = showSecondBB and showQMP ? colour_b_back : na)
+
+alertcondition(upSwitch_a or upSwitch_b, title = "QMP Buy", message = "BUY")
+alertcondition(downSwitch_a or downSwitch_b, title = "QMP Sell", message = "SELL")
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Divergences
+
+prd = input.int(defval = 5, title = "Pivot Period", minval = 1, maxval = 50, group='Divergence Settings')
+source2 = input.string(defval = "Close", title = "Source for Pivot Points", options = ["Close", "High & Low"], group='Divergence Settings')
+searchdiv = input.string(defval = "Regular & Hidden", title = "Divergence Type", options = ["Regular & Hidden", "Regular", "Hidden"], group='Divergence Settings')
+showindis = input.string(defval = "Full", title = "Show Indicator Names", options = ["Full", "First Letter", "Don't Show"], group='Divergence Settings')
+showlimit = input.int(1, title="Minimum Number of Divergence", minval = 1, maxval = 11, group='Divergence Settings')
+maxpp = input.int(defval = 10, title = "Maximum Pivot Points to Check", minval = 1, maxval = 20, group='Divergence Settings')
+maxbars = input.int(defval = 100, title = "Maximum Bars to Check", minval = 30, maxval = 200, group='Divergence Settings')
+shownum = input.bool(defval = true, title = "Show Divergence Number", group='Divergence Settings')
+showlast = input.bool(defval = false, title = "Show Only Last Divergence", group='Divergence Settings')
+dontconfirm = input.bool(defval = false, title = "Don't Wait for Confirmation", group='Divergence Settings')
+showlines = input.bool(defval = true, title = "Show Divergence Lines", group='Divergence Settings')
+showpivot = input.bool(defval = false, title = "Show Pivot Points", group='Divergence Settings')
+divlabelgap = input.float(0.002, title = "Label Gap (dflt: 0.002)", step = 0.0005, group='Divergence Settings')
+
+calcmacd = input.bool(defval = true, title = "MACD", group='Divergence Indicators')
+calcmacda = input.bool(defval = false, title = "MACD Histogram", group='Divergence Indicators')
+calcrsi = input.bool(defval = true, title = "RSI", group='Divergence Indicators')
+calcstoc = input.bool(defval = true, title = "Stochastic", group='Divergence Indicators')
+calccci = input.bool(defval = false, title = "CCI", group='Divergence Indicators')
+calcmom = input.bool(defval = false, title = "Momentum", group='Divergence Indicators')
+calcobv = input.bool(defval = false, title = "OBV", group='Divergence Indicators')
+calcvwmacd = input.bool(false, title = "VWMACD", group='Divergence Indicators')
+calccmf = input.bool(false, title = "Chaikin Money Flow", group='Divergence Indicators')
+calcmfi = input.bool(false, title = "Money Flow Index", group='Divergence Indicators')
+calcext = input.bool(false, title = "Check External Indicator", group='Divergence Indicators')
+externalindi = input.source(defval = close, title = "External Indicator", group='Divergence Indicators')
+
+pos_reg_div_col = input.color(defval = color.rgb(175, 213, 171, 33), title = "Positive Regular Divergence", group='Divergence Types')
+neg_reg_div_col = input.color(defval = color.rgb(223, 107, 145, 33), title = "Negative Regular Divergence", group='Divergence Types')
+pos_hid_div_col = input.color(defval = color.rgb(0, 230, 118, 33), title = "Positive Hidden Divergence", group='Divergence Types')
+neg_hid_div_col = input.color(defval = color.rgb(255, 82, 82, 33), title = "Negative Hidden Divergence", group='Divergence Types')
+pos_div_text_col = input.color(defval = color.white, title = "Positive Divergence Text Color", group='Divergence Types')
+neg_div_text_col = input.color(defval = color.white, title = "Negative Divergence Text Color", group='Divergence Types')
+reg_div_l_style_ = input.string(defval = "Solid", title = "Regular Divergence Line Style", options = ["Solid", "Dashed", "Dotted"], group='Divergence Types')
+hid_div_l_style_ = input.string(defval = "Solid", title = "Hdden Divergence Line Style", options = ["Solid", "Dashed", "Dotted"], group='Divergence Types')
+reg_div_l_width = input.int(defval = 2, title = "Regular Divergence Line Width", minval = 1, maxval = 5, group='Divergence Types')
+hid_div_l_width = input.int(defval = 1, title = "Hidden Divergence Line Width", minval = 1, maxval = 5, group='Divergence Types')
+
+// set line styles
+var reg_div_l_style = reg_div_l_style_ == "Dotted" ? line.style_dotted : 
+                       reg_div_l_style_ == "Dashed" ? line.style_dashed :
+                       line.style_solid
+var hid_div_l_style = hid_div_l_style_ == "Dotted" ? line.style_dotted : 
+                       hid_div_l_style_ == "Dashed" ? line.style_dashed :
+                       line.style_solid
+
+// get indicators
+rsi = ta.rsi(close, 14) // RSI
+[macd, signal, deltamacd] = ta.macd(close, 12, 26, 9) // MACD
+moment = ta.mom(close, 10) // Momentum
+cci = ta.cci(close, 10) // CCI
+Obv = ta.obv // OBV
+stk = ta.sma(ta.stoch(close, high, low, 14), 3) // Stoch
+maFast = ta.vwma(close, 12), maSlow = ta.vwma(close, 26), vwmacd = maFast - maSlow // volume weighted macd
+Cmfm = ((close-low) - (high-close)) / (high - low), Cmfv = Cmfm * volume, cmf = ta.sma(Cmfv, 21) / ta.sma(volume,21) // Chaikin money flow
+Mfi = ta.mfi(close, 14) // Moneyt Flow Index
+
+// keep indicators names and colors in arrays
+var indicators_name = array.new_string(11)
+var div_colors = array.new_color(4)
+if barstate.isfirst
+    // names
+    array.set(indicators_name, 0, showindis == "Full" ? "MACD" : "M")
+    array.set(indicators_name, 1, showindis == "Full" ? "Hist" : "H")
+    array.set(indicators_name, 2, showindis == "Full" ? "RSI" : "E")
+    array.set(indicators_name, 3, showindis == "Full" ? "Stoch" : "S")
+    array.set(indicators_name, 4, showindis == "Full" ? "CCI" : "C")
+    array.set(indicators_name, 5, showindis == "Full" ? "MOM" : "M")
+    array.set(indicators_name, 6, showindis == "Full" ? "OBV" : "O")
+    array.set(indicators_name, 7, showindis == "Full" ? "VWMACD" : "V")
+    array.set(indicators_name, 8, showindis == "Full" ? "CMF" : "C")
+    array.set(indicators_name, 9, showindis == "Full" ? "MFI" : "M")
+    array.set(indicators_name,10, showindis == "Full" ? "External" : "X")
+    //colors
+    array.set(div_colors, 0, pos_reg_div_col)
+    array.set(div_colors, 1, neg_reg_div_col)
+    array.set(div_colors, 2, pos_hid_div_col)
+    array.set(div_colors, 3, neg_hid_div_col)
+
+// Check if we get new Pivot High or Pivot Low
+float ph = ta.pivothigh((source2 == "Close" ? close : high), prd, prd)
+float pl = ta.pivotlow((source2 == "Close" ? close : low), prd, prd)
+plotshape(showpivot ? ph: na, text = "H",  title = "Pivot High", style = shape.labeldown, color = color.new(color.white, 100), textcolor = color.red, location = location.abovebar, offset = -prd)
+plotshape(showpivot ? pl: na, text = "L",  title = "Pivot Low",  style = shape.labelup, color = color.new(color.white, 100), textcolor = color.lime, location = location.belowbar, offset = -prd)
+
+
+// keep values and positions of Pivot Highs/Lows in the arrays
+var int maxarraysize = 20
+var ph_positions = array.new_int(maxarraysize, 0)
+var pl_positions = array.new_int(maxarraysize, 0)
+var ph_vals = array.new_float(maxarraysize, 0.)
+var pl_vals = array.new_float(maxarraysize, 0.)
+
+// add PHs to the array
+if not na(ph)
+    array.unshift(ph_positions, bar_index)
+    array.unshift(ph_vals, ph)
+    if array.size(ph_positions) > maxarraysize
+        array.pop(ph_positions)
+        array.pop(ph_vals)
+
+// add PLs to the array
+if not na(pl)
+    array.unshift(pl_positions, bar_index)
+    array.unshift(pl_vals, pl)
+    if array.size(pl_positions) > maxarraysize
+        array.pop(pl_positions)
+        array.pop(pl_vals)
+
+// functions to check Regular Divergences and Hidden Divergences
+
+// function to check positive regular or negative hidden divergence
+// cond == 1 => positive_regular, cond == 2=> negative_hidden
+positive_regular_positive_hidden_divergence(src, cond)=>
+    divlen = 0
+    prsc = source2 == "Close" ? close : low
+    // if indicators higher than last value and close price is higher than last close 
+    if dontconfirm or src > src[1] or close > close[1]
+        startpoint = dontconfirm ? 0 : 1 // don't check last candle
+        // we search last 15 PPs
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(pl_positions, x) + prd
+            // if we reach non valued array element or arrived 101. or previous bars then we don't search more
+            if array.get(pl_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and 
+               ((cond == 1 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(pl_vals, x))) or
+               (cond == 2 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(pl_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - close[len]) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] < virtual_line1 or nz(close[y]) < virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+// function to check negative regular or positive hidden divergence
+// cond == 1 => negative_regular, cond == 2=> positive_hidden
+negative_regular_negative_hidden_divergence(src, cond)=>
+    divlen = 0
+    prsc = source2 == "Close" ? close : high
+    // if indicators higher than last value and close price is higher than last close 
+    if dontconfirm or src < src[1] or close < close[1]
+        startpoint = dontconfirm ? 0 : 1 // don't check last candle
+        // we search last 15 PPs
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(ph_positions, x) + prd
+            // if we reach non valued array element or arrived 101. or previous bars then we don't for search more
+            if array.get(ph_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and 
+               ((cond == 1 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(ph_vals, x))) or 
+               (cond == 2 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(ph_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - nz(close[len])) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] > virtual_line1 or nz(close[y]) > virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+// calculate 4 types of divergence if enabled in the options and return divergences in an array
+calculate_divs(cond, indicator)=>
+    divs = array.new_int(4, 0)
+    array.set(divs, 0, cond and (searchdiv == "Regular" or searchdiv == "Regular & Hidden") ? positive_regular_positive_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 1, cond and (searchdiv == "Regular" or searchdiv == "Regular & Hidden") ? negative_regular_negative_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 2, cond and (searchdiv == "Hidden" or searchdiv == "Regular & Hidden")  ? positive_regular_positive_hidden_divergence(indicator, 2) : 0)
+    array.set(divs, 3, cond and (searchdiv == "Hidden" or searchdiv == "Regular & Hidden")  ? negative_regular_negative_hidden_divergence(indicator, 2) : 0)
+    divs
+
+// array to keep all divergences
+var all_divergences = array.new_int(44) // 11 indicators * 4 divergence = 44 elements
+// set related array elements
+array_set_divs(div_pointer, index)=>
+    for x = 0 to 3
+        array.set(all_divergences, index * 4 + x, array.get(div_pointer, x))
+
+// set divergences array 
+array_set_divs(calculate_divs(calcmacd, macd), 0)
+array_set_divs(calculate_divs(calcmacda, deltamacd), 1)
+array_set_divs(calculate_divs(calcrsi, rsi), 2)
+array_set_divs(calculate_divs(calcstoc, stk), 3)
+array_set_divs(calculate_divs(calccci, cci), 4)
+array_set_divs(calculate_divs(calcmom, moment), 5)
+array_set_divs(calculate_divs(calcobv, Obv), 6)
+array_set_divs(calculate_divs(calcvwmacd, vwmacd), 7)
+array_set_divs(calculate_divs(calccmf, cmf), 8)
+array_set_divs(calculate_divs(calcmfi, Mfi), 9)
+array_set_divs(calculate_divs(calcext, externalindi), 10)
+
+// check minimum number of divergence, if less than showlimit then delete all divergence
+total_div = 0
+for x = 0 to array.size(all_divergences) - 1
+    total_div := total_div + array.get(all_divergences, x)
+
+if total_div < showlimit
+    array.fill(all_divergences, 0)
+
+// keep line in an array
+var pos_div_lines = array.new_line(0)
+var neg_div_lines = array.new_line(0)
+var pos_div_labels = array.new_label(0)
+var neg_div_labels = array.new_label(0) 
+
+// remove old lines and labels if showlast option is enabled
+delete_old_pos_div_lines()=>
+    if array.size(pos_div_lines) > 0    
+        for j = 0 to array.size(pos_div_lines) - 1 
+            line.delete(array.get(pos_div_lines, j))
+        array.clear(pos_div_lines)
+
+delete_old_neg_div_lines()=>
+    if array.size(neg_div_lines) > 0    
+        for j = 0 to array.size(neg_div_lines) - 1 
+            line.delete(array.get(neg_div_lines, j))
+        array.clear(neg_div_lines)
+
+delete_old_pos_div_labels()=>
+    if array.size(pos_div_labels) > 0 
+        for j = 0 to array.size(pos_div_labels) - 1 
+            label.delete(array.get(pos_div_labels, j))
+        array.clear(pos_div_labels)
+
+delete_old_neg_div_labels()=>
+    if array.size(neg_div_labels) > 0    
+        for j = 0 to array.size(neg_div_labels) - 1 
+            label.delete(array.get(neg_div_labels, j))
+        array.clear(neg_div_labels)
+
+// delete last created lines and labels until we met new PH/PV 
+delete_last_pos_div_lines_label(n)=>
+    if n > 0 and array.size(pos_div_lines) >= n    
+        asz = array.size(pos_div_lines)
+        for j = 1 to n
+            line.delete(array.get(pos_div_lines, asz - j))
+            array.pop(pos_div_lines)
+        if array.size(pos_div_labels) > 0  
+            label.delete(array.get(pos_div_labels, array.size(pos_div_labels) - 1))
+            array.pop(pos_div_labels)
+
+delete_last_neg_div_lines_label(n)=>
+    if n > 0 and array.size(neg_div_lines) >= n    
+        asz = array.size(neg_div_lines)
+        for j = 1 to n
+            line.delete(array.get(neg_div_lines, asz - j))
+            array.pop(neg_div_lines)
+        if array.size(neg_div_labels) > 0  
+            label.delete(array.get(neg_div_labels, array.size(neg_div_labels) - 1))
+            array.pop(neg_div_labels)
+            
+// variables for Alerts
+pos_reg_div_detected = false
+neg_reg_div_detected = false
+pos_hid_div_detected = false
+neg_hid_div_detected = false
+
+// to remove lines/labels until we met new // PH/PL
+var last_pos_div_lines = 0
+var last_neg_div_lines = 0
+var remove_last_pos_divs = false 
+var remove_last_neg_divs = false
+if not na(pl)
+    remove_last_pos_divs := false
+    last_pos_div_lines := 0
+if not na(ph)
+    remove_last_neg_divs := false
+    last_neg_div_lines := 0
+
+// draw divergences lines and labels
+divergence_text_top = ""
+divergence_text_bottom = ""
+distances = array.new_int(0)
+dnumdiv_top = 0
+dnumdiv_bottom = 0
+top_label_col = color.white
+bottom_label_col = color.white
+old_pos_divs_can_be_removed = true
+old_neg_divs_can_be_removed = true
+startpoint = dontconfirm ? 0 : 1 // used for don't confirm option
+
+for x = 0 to 10
+    div_type = -1
+    for y = 0 to 3
+        if array.get(all_divergences, x * 4 + y) > 0 // any divergence?
+            div_type := y
+            if (y % 2) == 1 
+                dnumdiv_top := dnumdiv_top + 1
+                top_label_col := array.get(div_colors, y)
+            if (y % 2) == 0
+                dnumdiv_bottom := dnumdiv_bottom + 1
+                bottom_label_col := array.get(div_colors, y)
+            if not array.includes(distances, array.get(all_divergences, x * 4 + y))  // line not exist ?
+                array.push(distances, array.get(all_divergences, x * 4 + y))
+                new_line = showlines ? line.new(x1 = bar_index - array.get(all_divergences, x * 4 + y), 
+                          y1 = (source2 == "Close" ? close[array.get(all_divergences, x * 4 + y)] : 
+                                           (y % 2) == 0 ? low[array.get(all_divergences, x * 4 + y)] : 
+                                                          high[array.get(all_divergences, x * 4 + y)]),
+                          x2 = bar_index - startpoint,
+                          y2 = (source2 == "Close" ? close[startpoint] : 
+                                           (y % 2) == 0 ? low[startpoint] : 
+                                                          high[startpoint]),
+                          color = array.get(div_colors, y),
+                          style = y < 2 ? reg_div_l_style : hid_div_l_style,
+                          width = y < 2 ? reg_div_l_width : hid_div_l_width
+                          )
+                          : na
+                if (y % 2) == 0
+                    if old_pos_divs_can_be_removed
+                        old_pos_divs_can_be_removed := false
+                        if not showlast and remove_last_pos_divs
+                            delete_last_pos_div_lines_label(last_pos_div_lines)
+                            last_pos_div_lines := 0
+                        if showlast
+                            delete_old_pos_div_lines()
+                    array.push(pos_div_lines, new_line)
+                    last_pos_div_lines := last_pos_div_lines + 1
+                    remove_last_pos_divs := true
+                    
+                if (y % 2) == 1
+                    if old_neg_divs_can_be_removed
+                        old_neg_divs_can_be_removed := false
+                        if not showlast and remove_last_neg_divs
+                            delete_last_neg_div_lines_label(last_neg_div_lines)
+                            last_neg_div_lines := 0
+                        if showlast
+                            delete_old_neg_div_lines()
+                    array.push(neg_div_lines, new_line)
+                    last_neg_div_lines := last_neg_div_lines + 1
+                    remove_last_neg_divs := true
+                    
+            // set variables for alerts
+            if y == 0
+                pos_reg_div_detected := true
+            if y == 1
+                neg_reg_div_detected := true
+            if y == 2
+                pos_hid_div_detected := true
+            if y == 3
+                neg_hid_div_detected := true
+    // get text for labels
+    if div_type >= 0
+        divergence_text_top    := divergence_text_top    + ((div_type % 2) == 1 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+        divergence_text_bottom := divergence_text_bottom + ((div_type % 2) == 0 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+
+
+// draw labels
+if showindis != "Don't Show" or shownum
+    if shownum and dnumdiv_top > 0
+        divergence_text_top := divergence_text_top + str.tostring(dnumdiv_top)
+    if shownum and dnumdiv_bottom > 0
+        divergence_text_bottom := divergence_text_bottom + str.tostring(dnumdiv_bottom)
+    if divergence_text_top != ""
+        if showlast
+            delete_old_neg_div_labels()
+        array.push(neg_div_labels,
+                      label.new( x = bar_index, 
+                                 y = math.max((1.0+divlabelgap)*high, (1.0+divlabelgap)*high[1]), // Change position of upper labels here
+                                 text = divergence_text_top,
+                                 color = top_label_col,
+                                 textcolor = neg_div_text_col,
+                                 style = label.style_label_down
+                                 ))
+                                 
+    if divergence_text_bottom != ""
+        if showlast
+            delete_old_pos_div_labels()
+        array.push(pos_div_labels, 
+                      label.new( x = bar_index, 
+                                 y = math.min((1.0-divlabelgap)*low, (1.0-divlabelgap)*low[1]), // Change position of lower labels here
+                                 text = divergence_text_bottom,
+                                 color = bottom_label_col, 
+                                 textcolor = pos_div_text_col,
+                                 style = label.style_label_up
+                                 ))
+                                 
+    
+alertcondition(pos_reg_div_detected, title='Positive Regular Divergence Detected', message='Positive Regular Divergence Detected')
+alertcondition(neg_reg_div_detected, title='Negative Regular Divergence Detected', message='Negative Regular Divergence Detected')
+alertcondition(pos_hid_div_detected, title='Positive Hidden Divergence Detected', message='Positive Hidden Divergence Detected')
+alertcondition(neg_hid_div_detected, title='Negative Hidden Divergence Detected', message='Negative Hidden Divergence Detected')
+
+alertcondition(pos_reg_div_detected or pos_hid_div_detected, title='Positive Divergence Detected', message='Positive Divergence Detected')
+alertcondition(neg_reg_div_detected or neg_hid_div_detected, title='Negative Divergence Detected', message='Negative Divergence Detected')
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Auto Fibonacci Retracement
+
+devTooltip = "Deviation is a multiplier that affects how much the price should deviate from the previous pivot in order for the bar to become a new pivot."
+depthTooltip = "The minimum number of bars that will be taken into account when calculating the indicator."
+// pivots threshold
+threshold_multiplier = input.float(title="Deviation", defval=3, minval=0, tooltip=devTooltip, group='Fibonacci Retracement Settings')
+depth = input.int(title="Depth", defval=10, minval=2, tooltip=depthTooltip, group='Fibonacci Retracement Settings')
+reverse = input(false, "Reverse", display = display.none, group='Fibonacci Retracement Settings')
+var extendLeft = input(false, "Extend Left    |    Extend Right", inline = "Extend Lines", group='Fibonacci Retracement Settings')
+var extendRight = input(true, "", inline = "Extend Lines", group='Fibonacci Retracement Settings')
+var extending = extend.none
+if extendLeft and extendRight
+    extending := extend.both
+if extendLeft and not extendRight
+    extending := extend.left
+if not extendLeft and extendRight
+    extending := extend.right
+prices = input(true, "Show Prices", display = display.none, group='Fibonacci Retracement Settings')
+levels = input(true, "Show Levels", inline = "Levels", display = display.none, group='Fibonacci Retracement Settings')
+levelsFormat = input.string("Values", "", options = ["Values", "Percent"], inline = "Levels", display = display.none, group='Fibonacci Retracement Settings')
+labelsPosition = input.string("Left", "Labels Position", options = ["Left", "Right"], display = display.none, group='Fibonacci Retracement Settings')
+var int backgroundTransparency = input.int(95, "Background Transparency", minval = 0, maxval = 100, display = display.none, group='Fibonacci Retracement Settings')
+
+import TradingView/ZigZag/7 as zigzag
+
+update()=>
+    var settings = zigzag.Settings.new(threshold_multiplier, depth, color(na), false, false, false, false, "Absolute", true)
+    var zigzag.ZigZag zigZag = zigzag.newInstance(settings)
+    var zigzag.Pivot lastP = na
+    var float startPrice = na
+    var float height = na
+    if barstate.islast and zigZag.pivots.size() < 2
+        runtime.error("Not enough data to calculate Auto Fib Retracement on the current symbol. Change the chart's timeframe to a lower one or select a smaller calculation depth using the indicator's `Depth` settings.")
+    settings.devThreshold := ta.atr(10) / close * 100 * threshold_multiplier
+    if zigZag.update()
+        lastP := zigZag.lastPivot()
+        if not na(lastP)
+            var line lineLast = na
+            if na(lineLast)
+                lineLast := line.new(lastP.start, lastP.end, xloc=xloc.bar_time, color=color.gray, width=1, style=line.style_dashed)
+            else
+                line.set_first_point(lineLast, lastP.start)
+                line.set_second_point(lineLast, lastP.end)
+
+            startPrice := reverse ? lastP.start.price : lastP.end.price
+            endPrice = reverse ? lastP.end.price : lastP.start.price
+            height := (startPrice > endPrice ? -1 : 1) * math.abs(startPrice - endPrice)
+    [lastP, startPrice, height]
+
+[lastP, startPrice, height] = update()
+
+_draw_line(price, col) =>
+    var id = line.new(lastP.start.time, lastP.start.price, time, price, xloc=xloc.bar_time, color=col, width=1, extend=extending)
+    line.set_xy1(id, lastP.start.time, price)
+    line.set_xy2(id, lastP.end.time, price)
+    id
+
+
+_draw_label(price, txt, txtColor) =>
+    x = labelsPosition == "Left" ? lastP.start.time : not extendRight ? lastP.end.time : time
+    labelStyle = labelsPosition == "Left" ? label.style_label_right : label.style_label_left
+    align = labelsPosition == "Left" ? text.align_right : text.align_left
+    labelsAlignStrLeft = txt + '\n ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏ \n'
+    labelsAlignStrRight = '       ' + txt + '\n ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏  ‏ \n'
+    labelsAlignStr = labelsPosition == "Left" ? labelsAlignStrLeft : labelsAlignStrRight
+    var id = label.new(x=x, y=price, xloc=xloc.bar_time, text=labelsAlignStr, textcolor=txtColor, style=labelStyle, textalign=align, color=#00000000)
+    label.set_xy(id, x, price)
+    label.set_text(id, labelsAlignStr)
+    label.set_textcolor(id, txtColor)
+
+_wrap(txt) =>
+    "(" + str.tostring(txt, format.mintick) + ")"
+
+_label_txt(level, price) =>
+    l = levelsFormat == "Values" ? str.tostring(level) : str.tostring(level * 100) + "%"
+    (levels ? l : "") + (prices ? _wrap(price) : "")
+
+_crossing_level(series float sr, series float r) =>
+    (r > sr and r < sr[1]) or (r < sr and r > sr[1])
+
+processLevel(bool show, float value, color colorL, line lineIdOther) =>
+    float m = value
+    r = startPrice + height * m
+    crossed = _crossing_level(close, r)
+    if showFibonacci and show and not na(lastP)
+        lineId = _draw_line(r, colorL)
+        _draw_label(r, _label_txt(m, r), colorL)
+        if crossed
+            alert("Autofib: " + syminfo.ticker + " crossing level " + str.tostring(value))
+        if not na(lineIdOther)
+            linefill.new(lineId, lineIdOther, color = color.new(colorL, backgroundTransparency))
+        lineId
+    else
+        lineIdOther
+
+show_0  = input(true, "", inline = "Level0", display = display.none)
+value_0 = input(0, "", inline = "Level0", display = display.none)
+color_0 = input(#787b86, "", inline = "Level0", display = display.none)
+
+show_0_236  = input(true, "", inline = "Level0", display = display.none)
+value_0_236 = input(0.236, "", inline = "Level0", display = display.none)
+color_0_236 = input(#f44336, "", inline = "Level0", display = display.none)
+
+show_0_382  = input(true, "", inline = "Level1", display = display.none)
+value_0_382 = input(0.382, "", inline = "Level1", display = display.none)
+color_0_382 = input(#81c784, "", inline = "Level1", display = display.none)
+
+show_0_5  = input(true, "", inline = "Level1", display = display.none)
+value_0_5 = input(0.5, "", inline = "Level1", display = display.none)
+color_0_5 = input(#4caf50, "", inline = "Level1", display = display.none)
+
+show_0_618  = input(true, "", inline = "Level2", display = display.none)
+value_0_618 = input(0.618, "", inline = "Level2", display = display.none)
+color_0_618 = input(#009688, "", inline = "Level2", display = display.none)
+
+show_0_65  = input(false, "", inline = "Level2", display = display.none)
+value_0_65 = input(0.65, "", inline = "Level2", display = display.none)
+color_0_65 = input(#009688, "", inline = "Level2", display = display.none)
+
+show_0_786  = input(true, "", inline = "Level3", display = display.none)
+value_0_786 = input(0.786, "", inline = "Level3", display = display.none)
+color_0_786 = input(#64b5f6, "", inline = "Level3", display = display.none)
+
+show_1  = input(true, "", inline = "Level3", display = display.none)
+value_1 = input(1, "", inline = "Level3", display = display.none)
+color_1 = input(#787b86, "", inline = "Level3", display = display.none)
+
+show_1_272  = input(false, "", inline = "Level4", display = display.none)
+value_1_272 = input(1.272, "", inline = "Level4", display = display.none)
+color_1_272 = input(#81c784, "", inline = "Level4", display = display.none)
+
+show_1_414  = input(false, "", inline = "Level4", display = display.none)
+value_1_414 = input(1.414, "", inline = "Level4", display = display.none)
+color_1_414 = input(#f44336, "", inline = "Level4", display = display.none)
+
+show_1_618  = input(false, "", inline = "Level5", display = display.none)
+value_1_618 = input(1.618, "", inline = "Level5", display = display.none)
+color_1_618 = input(#2962ff, "", inline = "Level5", display = display.none)
+
+show_1_65  = input(false, "", inline = "Level5", display = display.none)
+value_1_65 = input(1.65, "", inline = "Level5", display = display.none)
+color_1_65 = input(#2962ff, "", inline = "Level5", display = display.none)
+
+show_2_618  = input(false, "", inline = "Level6", display = display.none)
+value_2_618 = input(2.618, "", inline = "Level6", display = display.none)
+color_2_618 = input(#f44336, "", inline = "Level6", display = display.none)
+
+show_2_65  = input(false, "", inline = "Level6", display = display.none)
+value_2_65 = input(2.65, "", inline = "Level6", display = display.none)
+color_2_65 = input(#f44336, "", inline = "Level6", display = display.none)
+
+show_3_618  = input(false, "", inline = "Level7", display = display.none)
+value_3_618 = input(3.618, "", inline = "Level7", display = display.none)
+color_3_618 = input(#9c27b0, "", inline = "Level7", display = display.none)
+
+show_3_65  = input(false, "", inline = "Level7", display = display.none)
+value_3_65 = input(3.65, "", inline = "Level7", display = display.none)
+color_3_65 = input(#9c27b0, "", inline = "Level7", display = display.none)
+
+show_4_236  = input(false, "", inline = "Level8", display = display.none)
+value_4_236 = input(4.236, "", inline = "Level8", display = display.none)
+color_4_236 = input(#e91e63, "", inline = "Level8", display = display.none)
+
+show_4_618  = input(false, "", inline = "Level8", display = display.none)
+value_4_618 = input(4.618, "", inline = "Level8", display = display.none)
+color_4_618 = input(#81c784, "", inline = "Level8", display = display.none)
+
+show_neg_0_236  = input(true, "", inline = "Level9", display = display.none)
+value_neg_0_236 = input(-0.236, "", inline = "Level9", display = display.none)
+color_neg_0_236 = input(#f44336, "", inline = "Level9", display = display.none)
+
+show_neg_0_382  = input(true, "", inline = "Level9", display = display.none)
+value_neg_0_382 = input(-0.382, "", inline = "Level9", display = display.none)
+color_neg_0_382 = input(#81c784, "", inline = "Level9", display = display.none)
+
+show_neg_0_618  = input(true, "", inline = "Level10", display = display.none)
+value_neg_0_618 = input(-0.618, "", inline = "Level10", display = display.none)
+color_neg_0_618 = input(#009688, "", inline = "Level10", display = display.none)
+
+show_neg_0_65  = input(false, "", inline = "Level10", display = display.none)
+value_neg_0_65 = input(-0.65, "", inline = "Level10", display = display.none)
+color_neg_0_65 = input(#009688, "", inline = "Level10", display = display.none)
+
+show_neg_0_786  = input(false, "", inline = "Level11", display = display.none)
+value_neg_0_786 = input(-0.786, "", inline = "Level11", display = display.none)
+color_neg_0_786 = input(#64b5f6, "", inline = "Level11", display = display.none)
+
+show_neg_1  = input(false, "", inline = "Level11", display = display.none)
+value_neg_1 = input(-1, "", inline = "Level11", display = display.none)
+color_neg_1 = input(#787b86, "", inline = "Level11", display = display.none)
+
+
+lineId0 = processLevel(show_neg_1, value_neg_1, color_neg_1, line(na))
+lineId1 = processLevel(show_neg_0_786, value_neg_0_786, color_neg_0_786, lineId0)
+lineId2 = processLevel(show_neg_0_65, value_neg_0_65, color_neg_0_65, lineId1)
+lineId3 = processLevel(show_neg_0_618, value_neg_0_618, color_neg_0_618, lineId2)
+lineId4 = processLevel(show_neg_0_382, value_neg_0_382, color_neg_0_382, lineId3)
+lineId5 = processLevel(show_neg_0_236, value_neg_0_236, color_neg_0_236, lineId4)
+lineId6 = processLevel(show_0, value_0, color_0, lineId5)
+lineId7 = processLevel(show_0_236, value_0_236, color_0_236, lineId6)
+lineId8 = processLevel(show_0_382, value_0_382, color_0_382, lineId7)
+lineId9 = processLevel(show_0_5, value_0_5, color_0_5, lineId8)
+lineId10 = processLevel(show_0_618, value_0_618, color_0_618, lineId9)
+lineId11 = processLevel(show_0_65, value_0_65, color_0_65, lineId10)
+lineId12 = processLevel(show_0_786, value_0_786, color_0_786, lineId11)
+lineId13 = processLevel(show_1, value_1, color_1, lineId12)
+lineId14 = processLevel(show_1_272, value_1_272, color_1_272, lineId13)
+lineId15 = processLevel(show_1_414, value_1_414, color_1_414, lineId14)
+lineId16 = processLevel(show_1_618, value_1_618, color_1_618, lineId15)
+lineId17 = processLevel(show_1_65, value_1_65, color_1_65, lineId16)
+lineId18 = processLevel(show_2_618, value_2_618, color_2_618, lineId17)
+lineId19 = processLevel(show_2_65, value_2_65, color_2_65, lineId18)
+lineId20 = processLevel(show_3_618, value_3_618, color_3_618, lineId19)
+lineId21 = processLevel(show_3_65, value_3_65, color_3_65, lineId20)
+lineId22 = processLevel(show_4_236, value_4_236, color_4_236, lineId21)
+lineId23 = processLevel(show_4_618, value_4_618, color_4_618, lineId22)
