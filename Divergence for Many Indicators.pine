@@ -5,7 +5,7 @@ import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
 prd = input.int(5, "Pivot Period", minval = 1, maxval = 50, group = "Divergence Settings")
 sourceMode = input.string("Close", "Source for Pivot Points", options = ["Close", "High & Low"], group = "Divergence Settings")
 searchDiv = input.string("Regular & Hidden", "Divergence Type", options = ["Regular & Hidden", "Regular", "Hidden"], group = "Divergence Settings")
-showLimit = input.int(1, "Minimum Number of Divergence", minval = 1, maxval = 11, group = "Divergence Settings")
+showLimit = input.int(1, "Minimum Number of Divergence", minval = 1, maxval = 4, group = "Divergence Settings")
 maxpp = input.int(10, "Maximum Pivot Points to Check", minval = 1, maxval = 20, group = "Divergence Settings")
 maxbars = input.int(100, "Maximum Bars to Check", minval = 30, maxval = 200, group = "Divergence Settings")
 dontConfirm = input.bool(false, "Don't Wait for Confirmation", group = "Divergence Settings")
@@ -14,18 +14,48 @@ showLines = input.bool(true, "Show Divergence Lines", group = "Divergence Settin
 showLabels = input.bool(true, "Show Labels", group = "Divergence Settings")
 divLabelGap = input.float(0.002, "Label Gap", step = 0.0005, group = "Divergence Settings")
 
-calcMacd = input.bool(true, "MACD", group = "Divergence Indicators")
-calcMacdHist = input.bool(false, "MACD Histogram", group = "Divergence Indicators")
+calcMacdPlatinum = input.bool(true, "MACD Platinum", group = "Divergence Indicators")
+calcQQEAdvanced = input.bool(true, "QQE Advanced", group = "Divergence Indicators")
 calcRsi = input.bool(true, "RSI", group = "Divergence Indicators")
 calcStoch = input.bool(true, "Stochastic", group = "Divergence Indicators")
-calcCci = input.bool(false, "CCI", group = "Divergence Indicators")
-calcMom = input.bool(false, "Momentum", group = "Divergence Indicators")
-calcObv = input.bool(false, "OBV", group = "Divergence Indicators")
-calcVwmacd = input.bool(false, "VWMACD", group = "Divergence Indicators")
-calcCmf = input.bool(false, "Chaikin Money Flow", group = "Divergence Indicators")
-calcMfi = input.bool(false, "Money Flow Index", group = "Divergence Indicators")
-calcExt = input.bool(false, "Check External Indicator", group = "Divergence Indicators")
-externalIndi = input.source(close, "External Indicator", group = "Divergence Indicators")
+calcWGRC = input.bool(true, "Weighted Green-Red Count", group = "Divergence Indicators")
+calcExt = input.bool(false, "External Indicator", group = "Divergence Indicators")
+externalIndi = input.source(close, "External Source", group = "Divergence Indicators")
+
+macdSrc = input.source(close, "Source", group = "Divergence MACD Platinum")
+macdFast = input.int(12, "Fast", minval = 1, group = "Divergence MACD Platinum")
+macdSlow = input.int(26, "Slow", minval = 1, group = "Divergence MACD Platinum")
+macdSmooth = input.int(9, "Smooth", minval = 1, group = "Divergence MACD Platinum")
+macdMaType = input.string("DEMA", "Smoothing Function", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Divergence MACD Platinum")
+macdDivValue = input.string("MACD Line", "Divergence Value", options = ["MACD Line", "Signal Line", "Histogram"], group = "Divergence MACD Platinum")
+
+qqeSrc = input.source(close, "Source", group = "Divergence QQE Advanced")
+qqeRsiLen = input.int(10, "RSI Period", minval = 1, group = "Divergence QQE Advanced")
+qqeSf = input.int(14, "SF", minval = 1, group = "Divergence QQE Advanced")
+qqeWp = input.float(2.0, "WP", step = 0.025, group = "Divergence QQE Advanced")
+qqeMaType = input.string("EMA", "Smoothing Function", options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Divergence QQE Advanced")
+qqeRsiType = input.string("RSI", "RSI Type", options = ["RSI", "Stochastic RSI", "Ehlers' RSIH"], group = "Divergence QQE Advanced")
+qqeStochLen = input.int(14, "Stochastic RSI Length", minval = 1, group = "Divergence QQE Advanced")
+qqeStochSmooth = input.int(3, "Stochastic RSI Smoothing", minval = 1, group = "Divergence QQE Advanced")
+qqeDivValue = input.string("RSI MA", "Divergence Value", options = ["RSI MA", "Trailing Line", "RSI MA - Trailing Line"], group = "Divergence QQE Advanced")
+
+rsiSrc = input.source(close, "Source", group = "Divergence RSI")
+rsiLen = input.int(14, "RSI Period", minval = 1, group = "Divergence RSI")
+rsiType = input.string("RSI", "RSI Type", options = ["RSI", "Stochastic RSI", "Ehlers' RSIH"], group = "Divergence RSI")
+rsiStochLen = input.int(14, "Stochastic RSI Length", minval = 1, group = "Divergence RSI")
+rsiStochSmooth = input.int(3, "Stochastic RSI Smoothing", minval = 1, group = "Divergence RSI")
+
+stochKLen = input.int(14, "%K Length", minval = 1, group = "Divergence Stochastic")
+stochSmoothK = input.int(3, "%K Smoothing", minval = 1, group = "Divergence Stochastic")
+stochDLen = input.int(3, "%D Smoothing", minval = 1, group = "Divergence Stochastic")
+stochDivValue = input.string("%K", "Divergence Value", options = ["%K", "%D", "%K - %D"], group = "Divergence Stochastic")
+
+wgrcWeightingType = input.string("WMA", "Weighting MA", options = ["WMA", "HMA"], group = "Divergence WGRC")
+wgrcLen = input.int(14, "Length", minval = 1, group = "Divergence WGRC")
+wgrcSignalType = input.string("Binary", "Signal Calculation", options = ["Binary", "Candle Body", "Normalised Body"], group = "Divergence WGRC")
+wgrcSmoothingType = input.string("SMA", "Smoothing MA", options = ["SMA", "EMA", "DEMA", "TEMA", "WMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Divergence WGRC")
+wgrcSmooth = input.int(3, "Smoothing Factor", minval = 2, group = "Divergence WGRC")
+wgrcDivValue = input.string("WGRC", "Divergence Value", options = ["WGRC", "Smoothed WGRC", "WGRC - Smoothed WGRC"], group = "Divergence WGRC")
 
 posRegColor = input.color(color.rgb(175, 213, 171, 33), "Positive Regular Divergence", group = "Divergence Types")
 negRegColor = input.color(color.rgb(223, 107, 145, 33), "Negative Regular Divergence", group = "Divergence Types")
@@ -113,18 +143,17 @@ calculateDivs(enabled, indicator) =>
     negHid = enabled and (searchDiv == "Hidden" or searchDiv == "Regular & Hidden") ? posRegOrNegHid(indicator, 2) : 0
     [posReg, negReg, posHid, negHid]
 
-[macdValue, _, macdHist] = ta.macd(close, 12, 26, 9)
-rsiValue = ta.rsi(close, 14)
-stochValue = ta.sma(ta.stoch(close, high, low, 14), 3)
-cciValue = ta.cci(close, 10)
-momValue = ta.mom(close, 10)
-obvValue = ta.obv
-vwmacdValue = ta.vwma(close, 12) - ta.vwma(close, 26)
-cmfMoney = ((close - low) - (high - close)) / (high - low)
-cmfValue = ta.sma(cmfMoney * volume, 21) / ta.sma(volume, 21)
-mfiValue = ta.mfi(close, 14)
+[macdLine, macdSignal, macdHist] = mpbg.macd(macdSrc, macdFast, macdSlow, macdSmooth, macdMaType)
+macdValue = macdDivValue == "Signal Line" ? macdSignal : macdDivValue == "Histogram" ? macdHist : macdLine
+[qqeRsiMa, qqeTrailing] = mpbg.qqeLinesAdvanced(qqeSrc, qqeRsiLen, qqeSf, qqeWp, qqeMaType, qqeRsiType, qqeStochLen, qqeStochSmooth)
+qqeValue = qqeDivValue == "Trailing Line" ? qqeTrailing : qqeDivValue == "RSI MA - Trailing Line" ? qqeRsiMa - qqeTrailing : qqeRsiMa
+rsiValue = mpbg.rsiVariant(rsiSrc, rsiLen, rsiType, rsiStochLen, rsiStochSmooth)
+[stochK, stochD] = mpbg.stochastic(stochKLen, stochSmoothK, stochDLen)
+stochValue = stochDivValue == "%D" ? stochD : stochDivValue == "%K - %D" ? stochK - stochD : stochK
+[wgrc, smoothWgrc] = mpbg.weightedGreenRedCount(wgrcLen, wgrcSignalType, wgrcWeightingType, wgrcSmooth, wgrcSmoothingType)
+wgrcValue = wgrcDivValue == "Smoothed WGRC" ? smoothWgrc : wgrcDivValue == "WGRC - Smoothed WGRC" ? wgrc - smoothWgrc : wgrc
 
-var names = array.from("MACD", "Hist", "RSI", "Stoch", "CCI", "MOM", "OBV", "VWMACD", "CMF", "MFI", "External")
+var names = array.from("MACD Platinum", "QQE Advanced", "RSI", "Stoch", "WGRC", "External")
 var posLines = array.new_line()
 var negLines = array.new_line()
 
@@ -151,22 +180,17 @@ handleIndicator(idx, enabled, value) =>
                 label.new(bar_index, math.max((1.0 + divLabelGap) * high, (1.0 + divLabelGap) * high[1]), array.get(names, idx), color = col, textcolor = color.white, style = label.style_label_down)
     [posReg > 0, negReg > 0, posHid > 0, negHid > 0]
 
-[pr0, nr0, ph0, nh0] = handleIndicator(0, calcMacd, macdValue)
-[pr1, nr1, ph1, nh1] = handleIndicator(1, calcMacdHist, macdHist)
+[pr0, nr0, ph0, nh0] = handleIndicator(0, calcMacdPlatinum, macdValue)
+[pr1, nr1, ph1, nh1] = handleIndicator(1, calcQQEAdvanced, qqeValue)
 [pr2, nr2, ph2, nh2] = handleIndicator(2, calcRsi, rsiValue)
 [pr3, nr3, ph3, nh3] = handleIndicator(3, calcStoch, stochValue)
-[pr4, nr4, ph4, nh4] = handleIndicator(4, calcCci, cciValue)
-[pr5, nr5, ph5, nh5] = handleIndicator(5, calcMom, momValue)
-[pr6, nr6, ph6, nh6] = handleIndicator(6, calcObv, obvValue)
-[pr7, nr7, ph7, nh7] = handleIndicator(7, calcVwmacd, vwmacdValue)
-[pr8, nr8, ph8, nh8] = handleIndicator(8, calcCmf, cmfValue)
-[pr9, nr9, ph9, nh9] = handleIndicator(9, calcMfi, mfiValue)
-[pr10, nr10, ph10, nh10] = handleIndicator(10, calcExt, externalIndi)
+[pr4, nr4, ph4, nh4] = handleIndicator(4, calcWGRC, wgrcValue)
+[pr5, nr5, ph5, nh5] = handleIndicator(5, calcExt, externalIndi)
 
-posRegDetected = pr0 or pr1 or pr2 or pr3 or pr4 or pr5 or pr6 or pr7 or pr8 or pr9 or pr10
-negRegDetected = nr0 or nr1 or nr2 or nr3 or nr4 or nr5 or nr6 or nr7 or nr8 or nr9 or nr10
-posHidDetected = ph0 or ph1 or ph2 or ph3 or ph4 or ph5 or ph6 or ph7 or ph8 or ph9 or ph10
-negHidDetected = nh0 or nh1 or nh2 or nh3 or nh4 or nh5 or nh6 or nh7 or nh8 or nh9 or nh10
+posRegDetected = pr0 or pr1 or pr2 or pr3 or pr4 or pr5
+negRegDetected = nr0 or nr1 or nr2 or nr3 or nr4 or nr5
+posHidDetected = ph0 or ph1 or ph2 or ph3 or ph4 or ph5
+negHidDetected = nh0 or nh1 or nh2 or nh3 or nh4 or nh5
 alertcondition(posRegDetected, title = "Positive Regular Divergence Detected", message = "Positive Regular Divergence Detected")
 alertcondition(negRegDetected, title = "Negative Regular Divergence Detected", message = "Negative Regular Divergence Detected")
 alertcondition(posHidDetected, title = "Positive Hidden Divergence Detected", message = "Positive Hidden Divergence Detected")

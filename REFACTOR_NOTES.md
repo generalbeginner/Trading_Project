@@ -5,7 +5,7 @@
 - `MPBGTradingLibrary.pine` contains reusable calculation functions for:
   - EMA/DEMA/TEMA/HMA/EHMA/zero-lag weak/SuperSmoother smoothing
   - MACD Platinum-style MACD
-  - QQE lines and QMP signal logic
+  - QQE lines and QMP signal logic, including RSI, Stochastic RSI, and Ehlers' RSIH variants
   - Bollinger Bands
   - manual RSI, stochastic, weighted green-red count
   - Ehlers Synthetic Oscillator helpers
@@ -22,9 +22,9 @@ If TradingView uses a different username, library title, or version number after
 ## Composite Indicators
 
 - `MQRSWSA Composite - Library.pine`: refactored version of `_originals/MQRSWSA [13-05-26].txt`.
-- `Double QMP Filter Composite - Library.pine`: refactored overlay composite for Double QMP, moving averages, Bollinger Bands, and Auto Fibonacci Retracement.
+- `Double QMP Filter Composite - Library.pine`: refactored overlay composite for Double QMP, moving averages, Bollinger Bands, Auto Fibonacci Retracement, and custom-source divergence.
 
-The original overlay script also embedded divergence drawing. In this refactor, divergence is split into its own standalone overlay indicator because it is line/label-array heavy and cleaner to maintain separately.
+The divergence section now focuses on MACD Platinum, QQE Advanced, RSI, Stochastic, Weighted Green-Red Count, plus an optional external source. Each has editable settings and a selector for the exact line/value used for divergence calculations. The RSI divergence source can use normal RSI, Stochastic RSI, or Ehlers' RSIH.
 
 ## Single-Purpose Indicators
 
@@ -38,4 +38,4 @@ The original overlay script also embedded divergence drawing. In this refactor, 
 - `Bollinger Bands.pine`
 - `Moving Average Stack.pine`
 - `Auto Fibonacci Retracement.pine`
-- `Divergence for Many Indicators.pine`
+- `Divergence for Many Indicators.pine`: standalone custom-source divergence using MACD Platinum, QQE Advanced, RSI, Stochastic, Weighted Green-Red Count, and optional external source.

@@ -72,10 +72,24 @@ export ehlersRSIH(series float src, simple int len) =>
             cd += (1.0 - cosPart) * absChg
     nz((cu - cd) / (cu + cd))
 
+export stochasticRsi(series float src, simple int rsiLen, simple int stochLen, simple int smoothK) =>
+    float rsiValue = ta.rsi(src, rsiLen)
+    float lowestRsi = ta.lowest(rsiValue, stochLen)
+    float highestRsi = ta.highest(rsiValue, stochLen)
+    float raw = highestRsi != lowestRsi ? 100.0 * (rsiValue - lowestRsi) / (highestRsi - lowestRsi) : 0.0
+    ta.sma(raw, smoothK)
+
 export rsi(series float src, simple int len, simple string rsiType) =>
     switch rsiType
+        "Stochastic RSI" => stochasticRsi(src, len, len, 1)
         "Ehlers' RSIH" => ehlersRSIH(src, len)
         => ta.rsi(src, len)
+
+export rsiVariant(series float src, simple int rsiLen, simple string rsiType, simple int stochLen, simple int smoothK) =>
+    switch rsiType
+        "Stochastic RSI" => stochasticRsi(src, rsiLen, stochLen, smoothK)
+        "Ehlers' RSIH" => ehlersRSIH(src, rsiLen)
+        => ta.rsi(src, rsiLen)
 
 export macd(series float src, simple int fastLen, simple int slowLen, simple int signalLen, simple string maType) =>
     float fast = ma(src, fastLen, maType)
@@ -105,8 +119,40 @@ export qqeLines(series float src, simple int rsiLen, simple int sf, simple float
     float trailingLine = trend == 1.0 ? longBand : shortBand
     [rsiMa, trailingLine]
 
+export qqeLinesAdvanced(series float src, simple int rsiLen, simple int sf, simple float wp, simple string maType, simple string rsiType, simple int stochLen, simple int stochSmoothK) =>
+    int wildersPeriod = rsiLen * 2 - 1
+    float rsiValue = rsiVariant(src, rsiLen, rsiType, stochLen, stochSmoothK)
+    float rsiMa = ma(rsiValue, sf, maType)
+    float atrRsi = math.abs(rsiMa[1] - rsiMa)
+    float maAtrRsi = ma(atrRsi, wildersPeriod, maType)
+    float dar = ma(maAtrRsi, wildersPeriod, maType) * wp
+    float newShortBand = rsiMa + dar
+    float shortBand = 0.0
+    shortBand := rsiMa[1] < shortBand[1] and rsiMa < shortBand[1] ? math.min(shortBand[1], newShortBand) : newShortBand
+    float newLongBand = rsiMa - dar
+    float longBand = 0.0
+    longBand := rsiMa[1] > longBand[1] and rsiMa > longBand[1] ? math.max(longBand[1], newLongBand) : newLongBand
+    float trend = 0.0
+    bool crossShort = ta.cross(rsiMa, shortBand[1])
+    bool crossLong = ta.cross(rsiMa, longBand[1])
+    trend := crossShort ? 1.0 : crossLong ? -1.0 : nz(trend[1], 1.0)
+    float trailingLine = trend == 1.0 ? longBand : shortBand
+    [rsiMa, trailingLine]
+
 export qqeQmpSignals(series float qqeSrc, simple int rsiLen, simple int sf, simple float wp, simple string qqeMaType, simple string rsiType, series float macdLine, series float signalLine) =>
     [rsiMa, trailingLine] = qqeLines(qqeSrc, rsiLen, sf, wp, qqeMaType, rsiType)
+    bool macdBull = ta.barssince(ta.crossover(macdLine, signalLine)) < ta.barssince(ta.crossunder(macdLine, signalLine))
+    bool macdBear = ta.barssince(ta.crossover(macdLine, signalLine)) > ta.barssince(ta.crossunder(macdLine, signalLine))
+    bool longSituation = macdBull and rsiMa > trailingLine
+    bool shortSituation = macdBear and rsiMa < trailingLine
+    bool longOverShort = ta.barssince(longSituation)[1] > ta.barssince(shortSituation)[1]
+    bool shortOverLong = ta.barssince(shortSituation)[1] > ta.barssince(longSituation)[1]
+    bool upSwitch = longSituation and longOverShort and barstate.isconfirmed
+    bool downSwitch = shortSituation and shortOverLong and barstate.isconfirmed
+    [upSwitch, downSwitch]
+
+export qqeQmpSignalsAdvanced(series float qqeSrc, simple int rsiLen, simple int sf, simple float wp, simple string qqeMaType, simple string rsiType, simple int stochLen, simple int stochSmoothK, series float macdLine, series float signalLine) =>
+    [rsiMa, trailingLine] = qqeLinesAdvanced(qqeSrc, rsiLen, sf, wp, qqeMaType, rsiType, stochLen, stochSmoothK)
     bool macdBull = ta.barssince(ta.crossover(macdLine, signalLine)) < ta.barssince(ta.crossunder(macdLine, signalLine))
     bool macdBear = ta.barssince(ta.crossover(macdLine, signalLine)) > ta.barssince(ta.crossunder(macdLine, signalLine))
     bool longSituation = macdBull and rsiMa > trailingLine
