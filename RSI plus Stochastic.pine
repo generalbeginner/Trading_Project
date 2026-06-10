@@ -1,0 +1,33 @@
+//@version=6
+indicator("RSI + Stochastic", shorttitle = "RSI Stoch", overlay = false)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+showRSI = input.bool(true, "Show RSI", group = "RSI Settings")
+rsiLengthInput = input.int(14, minval = 1, title = "RSI Length", group = "RSI Settings")
+rsiSourceInput = input.source(close, "Source", group = "RSI Settings")
+rsiValue = mpbg.manualRsi(rsiSourceInput, rsiLengthInput)
+rsiPlot = plot(showRSI ? rsiValue : na, "RSI", color = color.purple)
+rsiUpperBand = hline(showRSI ? 70 : na, "RSI Upper Band", color = #787B86)
+midline = hline(showRSI ? 50 : na, "RSI Middle Band", color = color.new(#787B86, 50))
+rsiLowerBand = hline(showRSI ? 30 : na, "RSI Lower Band", color = #787B86)
+fill(rsiUpperBand, rsiLowerBand, color = color.rgb(255, 255, 255, 95), title = "RSI Background Fill")
+midLinePlot = plot(showRSI ? 50 : na, color = na, editable = false, display = display.none)
+fill(rsiPlot, midLinePlot, 100, 70, top_color = color.new(color.green, 0), bottom_color = color.new(color.green, 100), title = "Overbought Gradient Fill")
+fill(rsiPlot, midLinePlot, 30, 0, top_color = color.new(color.red, 100), bottom_color = color.new(color.red, 0), title = "Oversold Gradient Fill")
+
+maTypeInput = input.string("None", "Smoothing Type", options = ["None", "SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group = "RSI Settings", display = display.none)
+maLengthInput = input.int(14, "Smoothing Length", group = "RSI Settings", display = display.none, active = maTypeInput != "None")
+enableMA = maTypeInput != "None"
+plot(enableMA ? mpbg.ma(rsiValue, maLengthInput, maTypeInput) : na, "RSI-based MA", color = color.rgb(206, 188, 27), display = enableMA ? display.all : display.none, editable = enableMA)
+
+showStoch = input.bool(true, "Show Stochastic", group = "Stochastic Settings")
+periodK = input.int(14, "%K Length", minval = 1, group = "Stochastic Settings")
+smoothK = input.int(3, "%K Smoothing", minval = 1, group = "Stochastic Settings")
+periodD = input.int(3, "%D Smoothing", minval = 1, group = "Stochastic Settings")
+[k, d] = mpbg.stochastic(periodK, smoothK, periodD)
+plot(showStoch ? k : na, title = "RSI %K", color = #2962FF)
+plot(showStoch ? d : na, title = "RSI %D", color = #FF6D00)
+h0 = hline(showStoch ? 80 : na, "Stochastic Upper Band", color = #787B86)
+hline(showStoch ? 50 : na, "Stochastic Middle Band", color = color.new(#787B86, 50))
+h1 = hline(showStoch ? 20 : na, "Stochastic Lower Band", color = #787B86)
+fill(h0, h1, color = color.rgb(255, 255, 255, 99), title = "Stochastic Background")

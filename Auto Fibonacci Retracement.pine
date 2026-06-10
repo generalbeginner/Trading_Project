@@ -1,0 +1,107 @@
+//@version=6
+indicator("Auto Fibonacci Retracement", shorttitle = "Auto Fib", overlay = true)
+import TradingView/ZigZag/7 as zigzag
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+devTooltip = "Deviation is a multiplier that affects how much the price should deviate from the previous pivot in order for the bar to become a new pivot."
+depthTooltip = "The minimum number of bars that will be taken into account when calculating the indicator."
+thresholdMultiplier = input.float(3, "Deviation", minval = 0, tooltip = devTooltip, group = "Fibonacci Retracement Settings")
+depth = input.int(10, "Depth", minval = 2, tooltip = depthTooltip, group = "Fibonacci Retracement Settings")
+reverse = input(false, "Reverse", display = display.none, group = "Fibonacci Retracement Settings")
+extendLeft = input(false, "Extend Left     |     Extend Right", inline = "Extend Lines", group = "Fibonacci Retracement Settings")
+extendRight = input(true, "", inline = "Extend Lines", group = "Fibonacci Retracement Settings")
+prices = input(true, "Show Prices", display = display.none, group = "Fibonacci Retracement Settings")
+levels = input(true, "Show Levels", inline = "Levels", display = display.none, group = "Fibonacci Retracement Settings")
+levelsFormat = input.string("Values", "", options = ["Values", "Percent"], inline = "Levels", display = display.none, group = "Fibonacci Retracement Settings")
+labelsPosition = input.string("Left", "Labels Position", options = ["Left", "Right"], display = display.none, group = "Fibonacci Retracement Settings")
+backgroundTransparency = input.int(95, "Background Transparency", minval = 0, maxval = 100, display = display.none, group = "Fibonacci Retracement Settings")
+extending = extendLeft and extendRight ? extend.both : extendLeft ? extend.left : extendRight ? extend.right : extend.none
+
+update() =>
+    var settings = zigzag.Settings.new(thresholdMultiplier, depth, color(na), false, false, false, false, "Absolute", true)
+    var zigzag.ZigZag zigZag = zigzag.newInstance(settings)
+    var zigzag.Pivot lastPivot = na
+    var float startPrice = na
+    var float height = na
+    if barstate.islast and zigZag.pivots.size() < 2
+        runtime.error("Not enough data to calculate Auto Fib Retracement on the current symbol. Try a lower timeframe or a smaller Depth setting.")
+    settings.devThreshold := ta.atr(10) / close * 100 * thresholdMultiplier
+    if zigZag.update()
+        lastPivot := zigZag.lastPivot()
+        if not na(lastPivot)
+            var line lastLine = na
+            if na(lastLine)
+                lastLine := line.new(lastPivot.start, lastPivot.end, xloc = xloc.bar_time, color = color.gray, width = 1, style = line.style_dashed)
+            else
+                line.set_first_point(lastLine, lastPivot.start)
+                line.set_second_point(lastLine, lastPivot.end)
+            startPrice := reverse ? lastPivot.start.price : lastPivot.end.price
+            endPrice = reverse ? lastPivot.end.price : lastPivot.start.price
+            height := (startPrice > endPrice ? -1 : 1) * math.abs(startPrice - endPrice)
+    [lastPivot, startPrice, height]
+
+[lastPivot, startPrice, height] = update()
+
+drawLine(price, col) =>
+    var id = line.new(lastPivot.start.time, lastPivot.start.price, time, price, xloc = xloc.bar_time, color = col, width = 1, extend = extending)
+    line.set_xy1(id, lastPivot.start.time, price)
+    line.set_xy2(id, lastPivot.end.time, price)
+    id
+
+drawLabel(price, txt, txtColor) =>
+    x = labelsPosition == "Left" ? lastPivot.start.time : not extendRight ? lastPivot.end.time : time
+    labelStyle = labelsPosition == "Left" ? label.style_label_right : label.style_label_left
+    align = labelsPosition == "Left" ? text.align_right : text.align_left
+    labelText = labelsPosition == "Left" ? txt + "\n" : "       " + txt + "\n"
+    var id = label.new(x = x, y = price, xloc = xloc.bar_time, text = labelText, textcolor = txtColor, style = labelStyle, textalign = align, color = #00000000)
+    label.set_xy(id, x, price)
+    label.set_text(id, labelText)
+    label.set_textcolor(id, txtColor)
+
+labelText(level, price) =>
+    levelText = levelsFormat == "Values" ? str.tostring(level) : str.tostring(level * 100) + "%"
+    (levels ? levelText : "") + (prices ? "(" + str.tostring(price, format.mintick) + ")" : "")
+
+processLevel(show, value, levelColor, lineIdOther) =>
+    price = mpbg.fibPrice(startPrice, height, value)
+    crossed = mpbg.crossingLevel(close, price)
+    if show and not na(lastPivot)
+        lineId = drawLine(price, levelColor)
+        drawLabel(price, labelText(value, price), levelColor)
+        if crossed
+            alert("Autofib: " + syminfo.ticker + " crossing level " + str.tostring(value))
+        if not na(lineIdOther)
+            linefill.new(lineId, lineIdOther, color = color.new(levelColor, backgroundTransparency))
+        lineId
+    else
+        lineIdOther
+
+showNeg1 = input(false, "", inline = "L0", display = display.none), valueNeg1 = input(-1.0, "", inline = "L0", display = display.none), colorNeg1 = input(#787b86, "", inline = "L0", display = display.none)
+showNeg786 = input(false, "", inline = "L0", display = display.none), valueNeg786 = input(-0.786, "", inline = "L0", display = display.none), colorNeg786 = input(#64b5f6, "", inline = "L0", display = display.none)
+showNeg618 = input(true, "", inline = "L1", display = display.none), valueNeg618 = input(-0.618, "", inline = "L1", display = display.none), colorNeg618 = input(#009688, "", inline = "L1", display = display.none)
+showNeg382 = input(true, "", inline = "L1", display = display.none), valueNeg382 = input(-0.382, "", inline = "L1", display = display.none), colorNeg382 = input(#81c784, "", inline = "L1", display = display.none)
+showNeg236 = input(true, "", inline = "L2", display = display.none), valueNeg236 = input(-0.236, "", inline = "L2", display = display.none), colorNeg236 = input(#f44336, "", inline = "L2", display = display.none)
+show0 = input(true, "", inline = "L2", display = display.none), value0 = input(0.0, "", inline = "L2", display = display.none), color0 = input(#787b86, "", inline = "L2", display = display.none)
+show236 = input(true, "", inline = "L3", display = display.none), value236 = input(0.236, "", inline = "L3", display = display.none), color236 = input(#f44336, "", inline = "L3", display = display.none)
+show382 = input(true, "", inline = "L3", display = display.none), value382 = input(0.382, "", inline = "L3", display = display.none), color382 = input(#81c784, "", inline = "L3", display = display.none)
+show5 = input(true, "", inline = "L4", display = display.none), value5 = input(0.5, "", inline = "L4", display = display.none), color5 = input(#4caf50, "", inline = "L4", display = display.none)
+show618 = input(true, "", inline = "L4", display = display.none), value618 = input(0.618, "", inline = "L4", display = display.none), color618 = input(#009688, "", inline = "L4", display = display.none)
+show786 = input(true, "", inline = "L5", display = display.none), value786 = input(0.786, "", inline = "L5", display = display.none), color786 = input(#64b5f6, "", inline = "L5", display = display.none)
+show1 = input(true, "", inline = "L5", display = display.none), value1 = input(1.0, "", inline = "L5", display = display.none), color1 = input(#787b86, "", inline = "L5", display = display.none)
+show1618 = input(false, "", inline = "L6", display = display.none), value1618 = input(1.618, "", inline = "L6", display = display.none), color1618 = input(#2962ff, "", inline = "L6", display = display.none)
+show2618 = input(false, "", inline = "L6", display = display.none), value2618 = input(2.618, "", inline = "L6", display = display.none), color2618 = input(#f44336, "", inline = "L6", display = display.none)
+
+lineId0 = processLevel(showNeg1, valueNeg1, colorNeg1, line(na))
+lineId1 = processLevel(showNeg786, valueNeg786, colorNeg786, lineId0)
+lineId2 = processLevel(showNeg618, valueNeg618, colorNeg618, lineId1)
+lineId3 = processLevel(showNeg382, valueNeg382, colorNeg382, lineId2)
+lineId4 = processLevel(showNeg236, valueNeg236, colorNeg236, lineId3)
+lineId5 = processLevel(show0, value0, color0, lineId4)
+lineId6 = processLevel(show236, value236, color236, lineId5)
+lineId7 = processLevel(show382, value382, color382, lineId6)
+lineId8 = processLevel(show5, value5, color5, lineId7)
+lineId9 = processLevel(show618, value618, color618, lineId8)
+lineId10 = processLevel(show786, value786, color786, lineId9)
+lineId11 = processLevel(show1, value1, color1, lineId10)
+lineId12 = processLevel(show1618, value1618, color1618, lineId11)
+lineId13 = processLevel(show2618, value2618, color2618, lineId12)

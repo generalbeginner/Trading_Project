@@ -1,0 +1,173 @@
+//@version=6
+indicator("Divergence for Many Indicators", shorttitle = "DfMI", overlay = true, max_bars_back = 1000, max_lines_count = 400, max_labels_count = 400)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+prd = input.int(5, "Pivot Period", minval = 1, maxval = 50, group = "Divergence Settings")
+sourceMode = input.string("Close", "Source for Pivot Points", options = ["Close", "High & Low"], group = "Divergence Settings")
+searchDiv = input.string("Regular & Hidden", "Divergence Type", options = ["Regular & Hidden", "Regular", "Hidden"], group = "Divergence Settings")
+showLimit = input.int(1, "Minimum Number of Divergence", minval = 1, maxval = 11, group = "Divergence Settings")
+maxpp = input.int(10, "Maximum Pivot Points to Check", minval = 1, maxval = 20, group = "Divergence Settings")
+maxbars = input.int(100, "Maximum Bars to Check", minval = 30, maxval = 200, group = "Divergence Settings")
+dontConfirm = input.bool(false, "Don't Wait for Confirmation", group = "Divergence Settings")
+showPivot = input.bool(false, "Show Pivot Points", group = "Divergence Settings")
+showLines = input.bool(true, "Show Divergence Lines", group = "Divergence Settings")
+showLabels = input.bool(true, "Show Labels", group = "Divergence Settings")
+divLabelGap = input.float(0.002, "Label Gap", step = 0.0005, group = "Divergence Settings")
+
+calcMacd = input.bool(true, "MACD", group = "Divergence Indicators")
+calcMacdHist = input.bool(false, "MACD Histogram", group = "Divergence Indicators")
+calcRsi = input.bool(true, "RSI", group = "Divergence Indicators")
+calcStoch = input.bool(true, "Stochastic", group = "Divergence Indicators")
+calcCci = input.bool(false, "CCI", group = "Divergence Indicators")
+calcMom = input.bool(false, "Momentum", group = "Divergence Indicators")
+calcObv = input.bool(false, "OBV", group = "Divergence Indicators")
+calcVwmacd = input.bool(false, "VWMACD", group = "Divergence Indicators")
+calcCmf = input.bool(false, "Chaikin Money Flow", group = "Divergence Indicators")
+calcMfi = input.bool(false, "Money Flow Index", group = "Divergence Indicators")
+calcExt = input.bool(false, "Check External Indicator", group = "Divergence Indicators")
+externalIndi = input.source(close, "External Indicator", group = "Divergence Indicators")
+
+posRegColor = input.color(color.rgb(175, 213, 171, 33), "Positive Regular Divergence", group = "Divergence Types")
+negRegColor = input.color(color.rgb(223, 107, 145, 33), "Negative Regular Divergence", group = "Divergence Types")
+posHidColor = input.color(color.rgb(0, 230, 118, 33), "Positive Hidden Divergence", group = "Divergence Types")
+negHidColor = input.color(color.rgb(255, 82, 82, 33), "Negative Hidden Divergence", group = "Divergence Types")
+regStyleInput = input.string("Solid", "Regular Divergence Line Style", options = ["Solid", "Dashed", "Dotted"], group = "Divergence Types")
+hidStyleInput = input.string("Solid", "Hidden Divergence Line Style", options = ["Solid", "Dashed", "Dotted"], group = "Divergence Types")
+regWidth = input.int(2, "Regular Divergence Line Width", minval = 1, maxval = 5, group = "Divergence Types")
+hidWidth = input.int(1, "Hidden Divergence Line Width", minval = 1, maxval = 5, group = "Divergence Types")
+
+float ph = ta.pivothigh(sourceMode == "Close" ? close : high, prd, prd)
+float pl = ta.pivotlow(sourceMode == "Close" ? close : low, prd, prd)
+plotshape(showPivot ? ph : na, text = "H", title = "Pivot High", style = shape.labeldown, color = color.new(color.white, 100), textcolor = color.red, location = location.abovebar, offset = -prd)
+plotshape(showPivot ? pl : na, text = "L", title = "Pivot Low", style = shape.labelup, color = color.new(color.white, 100), textcolor = color.lime, location = location.belowbar, offset = -prd)
+
+var phPositions = array.new_int(20, 0)
+var plPositions = array.new_int(20, 0)
+var phVals = array.new_float(20, 0.0)
+var plVals = array.new_float(20, 0.0)
+if not na(ph)
+    array.unshift(phPositions, bar_index), array.unshift(phVals, ph)
+    array.pop(phPositions), array.pop(phVals)
+if not na(pl)
+    array.unshift(plPositions, bar_index), array.unshift(plVals, pl)
+    array.pop(plPositions), array.pop(plVals)
+
+posRegOrNegHid(src, cond) =>
+    divlen = 0
+    priceSrc = sourceMode == "Close" ? close : low
+    if dontConfirm or src > src[1] or close > close[1]
+        start = dontConfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(plPositions, x) + prd
+            if array.get(plPositions, x) == 0 or len > maxbars
+                break
+            ok = len > 5 and ((cond == 1 and src[start] > src[len] and priceSrc[start] < nz(array.get(plVals, x))) or (cond == 2 and src[start] < src[len] and priceSrc[start] > nz(array.get(plVals, x))))
+            if ok
+                slope1 = (src[start] - src[len]) / (len - start)
+                virtual1 = src[start] - slope1
+                slope2 = (close[start] - close[len]) / (len - start)
+                virtual2 = close[start] - slope2
+                arrived = true
+                for y = 1 + start to len - 1
+                    if src[y] < virtual1 or nz(close[y]) < virtual2
+                        arrived := false
+                        break
+                    virtual1 -= slope1
+                    virtual2 -= slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+negRegOrPosHid(src, cond) =>
+    divlen = 0
+    priceSrc = sourceMode == "Close" ? close : high
+    if dontConfirm or src < src[1] or close < close[1]
+        start = dontConfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(phPositions, x) + prd
+            if array.get(phPositions, x) == 0 or len > maxbars
+                break
+            ok = len > 5 and ((cond == 1 and src[start] < src[len] and priceSrc[start] > nz(array.get(phVals, x))) or (cond == 2 and src[start] > src[len] and priceSrc[start] < nz(array.get(phVals, x))))
+            if ok
+                slope1 = (src[start] - src[len]) / (len - start)
+                virtual1 = src[start] - slope1
+                slope2 = (close[start] - nz(close[len])) / (len - start)
+                virtual2 = close[start] - slope2
+                arrived = true
+                for y = 1 + start to len - 1
+                    if src[y] > virtual1 or nz(close[y]) > virtual2
+                        arrived := false
+                        break
+                    virtual1 -= slope1
+                    virtual2 -= slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+calculateDivs(enabled, indicator) =>
+    posReg = enabled and (searchDiv == "Regular" or searchDiv == "Regular & Hidden") ? posRegOrNegHid(indicator, 1) : 0
+    negReg = enabled and (searchDiv == "Regular" or searchDiv == "Regular & Hidden") ? negRegOrPosHid(indicator, 1) : 0
+    posHid = enabled and (searchDiv == "Hidden" or searchDiv == "Regular & Hidden") ? negRegOrPosHid(indicator, 2) : 0
+    negHid = enabled and (searchDiv == "Hidden" or searchDiv == "Regular & Hidden") ? posRegOrNegHid(indicator, 2) : 0
+    [posReg, negReg, posHid, negHid]
+
+[macdValue, _, macdHist] = ta.macd(close, 12, 26, 9)
+rsiValue = ta.rsi(close, 14)
+stochValue = ta.sma(ta.stoch(close, high, low, 14), 3)
+cciValue = ta.cci(close, 10)
+momValue = ta.mom(close, 10)
+obvValue = ta.obv
+vwmacdValue = ta.vwma(close, 12) - ta.vwma(close, 26)
+cmfMoney = ((close - low) - (high - close)) / (high - low)
+cmfValue = ta.sma(cmfMoney * volume, 21) / ta.sma(volume, 21)
+mfiValue = ta.mfi(close, 14)
+
+var names = array.from("MACD", "Hist", "RSI", "Stoch", "CCI", "MOM", "OBV", "VWMACD", "CMF", "MFI", "External")
+var posLines = array.new_line()
+var negLines = array.new_line()
+
+handleIndicator(idx, enabled, value) =>
+    [posReg, negReg, posHid, negHid] = calculateDivs(enabled, value)
+    hasPos = posReg > 0 or posHid > 0
+    hasNeg = negReg > 0 or negHid > 0
+    total = (posReg > 0 ? 1 : 0) + (negReg > 0 ? 1 : 0) + (posHid > 0 ? 1 : 0) + (negHid > 0 ? 1 : 0)
+    if total >= showLimit
+        start = dontConfirm ? 0 : 1
+        if hasPos
+            len = posReg > 0 ? posReg : posHid
+            col = posReg > 0 ? posRegColor : posHidColor
+            if showLines
+                array.push(posLines, line.new(bar_index - len, sourceMode == "Close" ? close[len] : low[len], bar_index - start, sourceMode == "Close" ? close[start] : low[start], color = col, style = posReg > 0 ? mpbg.lineStyle(regStyleInput) : mpbg.lineStyle(hidStyleInput), width = posReg > 0 ? regWidth : hidWidth))
+            if showLabels
+                label.new(bar_index, math.min((1.0 - divLabelGap) * low, (1.0 - divLabelGap) * low[1]), array.get(names, idx), color = col, textcolor = color.white, style = label.style_label_up)
+        if hasNeg
+            len = negReg > 0 ? negReg : negHid
+            col = negReg > 0 ? negRegColor : negHidColor
+            if showLines
+                array.push(negLines, line.new(bar_index - len, sourceMode == "Close" ? close[len] : high[len], bar_index - start, sourceMode == "Close" ? close[start] : high[start], color = col, style = negReg > 0 ? mpbg.lineStyle(regStyleInput) : mpbg.lineStyle(hidStyleInput), width = negReg > 0 ? regWidth : hidWidth))
+            if showLabels
+                label.new(bar_index, math.max((1.0 + divLabelGap) * high, (1.0 + divLabelGap) * high[1]), array.get(names, idx), color = col, textcolor = color.white, style = label.style_label_down)
+    [posReg > 0, negReg > 0, posHid > 0, negHid > 0]
+
+[pr0, nr0, ph0, nh0] = handleIndicator(0, calcMacd, macdValue)
+[pr1, nr1, ph1, nh1] = handleIndicator(1, calcMacdHist, macdHist)
+[pr2, nr2, ph2, nh2] = handleIndicator(2, calcRsi, rsiValue)
+[pr3, nr3, ph3, nh3] = handleIndicator(3, calcStoch, stochValue)
+[pr4, nr4, ph4, nh4] = handleIndicator(4, calcCci, cciValue)
+[pr5, nr5, ph5, nh5] = handleIndicator(5, calcMom, momValue)
+[pr6, nr6, ph6, nh6] = handleIndicator(6, calcObv, obvValue)
+[pr7, nr7, ph7, nh7] = handleIndicator(7, calcVwmacd, vwmacdValue)
+[pr8, nr8, ph8, nh8] = handleIndicator(8, calcCmf, cmfValue)
+[pr9, nr9, ph9, nh9] = handleIndicator(9, calcMfi, mfiValue)
+[pr10, nr10, ph10, nh10] = handleIndicator(10, calcExt, externalIndi)
+
+posRegDetected = pr0 or pr1 or pr2 or pr3 or pr4 or pr5 or pr6 or pr7 or pr8 or pr9 or pr10
+negRegDetected = nr0 or nr1 or nr2 or nr3 or nr4 or nr5 or nr6 or nr7 or nr8 or nr9 or nr10
+posHidDetected = ph0 or ph1 or ph2 or ph3 or ph4 or ph5 or ph6 or ph7 or ph8 or ph9 or ph10
+negHidDetected = nh0 or nh1 or nh2 or nh3 or nh4 or nh5 or nh6 or nh7 or nh8 or nh9 or nh10
+alertcondition(posRegDetected, title = "Positive Regular Divergence Detected", message = "Positive Regular Divergence Detected")
+alertcondition(negRegDetected, title = "Negative Regular Divergence Detected", message = "Negative Regular Divergence Detected")
+alertcondition(posHidDetected, title = "Positive Hidden Divergence Detected", message = "Positive Hidden Divergence Detected")
+alertcondition(negHidDetected, title = "Negative Hidden Divergence Detected", message = "Negative Hidden Divergence Detected")

@@ -1,0 +1,19 @@
+//@version=6
+indicator("MACD Platinum", shorttitle = "MACD Platinum", overlay = false)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+fastLength = input.int(12, "Fast", step = 1, group = "MACD Settings")
+slowLength = input.int(26, "Slow", step = 1, group = "MACD Settings")
+smoothInput = input.int(9, "Smooth", step = 1, group = "MACD Settings")
+sourceMACD = input.source(close, "Source", group = "MACD Settings")
+maTypeMACD = input.string("DEMA", "Smoothing Function",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "MACD Settings")
+[macdLine, signalLine, hist] = mpbg.macd(sourceMACD, fastLength, slowLength, smoothInput, maTypeMACD)
+plot(macdLine, color = color.new(color.blue, 0), linewidth = 1, title = "MACD Line")
+plot(signalLine, color = color.new(color.orange, 0), linewidth = 1, title = "MACD Signal")
+hline(0.0, color = color.gray, linestyle = hline.style_dashed, title = "MACD Zero Level")
+plot(ta.crossover(macdLine, signalLine) and barstate.isconfirmed and hist > 0 ? signalLine : na,
+     style = plot.style_circles, linewidth = 4, color = color.aqua, title = "Upside MACD Cross")
+plot(ta.crossunder(macdLine, signalLine) and barstate.isconfirmed and hist < 0 ? signalLine : na,
+     style = plot.style_circles, linewidth = 4, color = color.red, title = "Downside MACD Cross")

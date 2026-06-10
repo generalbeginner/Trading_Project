@@ -1,0 +1,114 @@
+// This Pine Script(R) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) michaelpbgilbride
+
+//@version=6
+indicator("MQRSWSA [Library Refactor]", shorttitle = "MQRSWSA Lib", overlay = false)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+indicatorToggle = input.string("MACD Platinum", "Which indicator do you want to see?",
+     options = ["MACD Platinum", "QQE Adv", "RSI + Stochastic", "Weighted Green-Red Count", "Synthetic", "ATR"],
+     group = "INDICATOR SELECTION")
+showMACD = indicatorToggle == "MACD Platinum"
+showQQE = indicatorToggle == "QQE Adv"
+showRSIStoch = indicatorToggle == "RSI + Stochastic"
+showWGRC = indicatorToggle == "Weighted Green-Red Count"
+showSO = indicatorToggle == "Synthetic"
+showATR = indicatorToggle == "ATR"
+
+// MACD Platinum
+fastLength = input.int(12, "Fast (dflt: 12)", step = 1, group = "MACD Settings")
+slowLength = input.int(26, "Slow (dflt: 26)", step = 1, group = "MACD Settings")
+smoothInput = input.int(9, "Smooth (dflt: 9)", step = 1, group = "MACD Settings")
+sourceMACD = input.source(close, "Source (dflt: close)", group = "MACD Settings")
+maTypeMACD = input.string("DEMA", "Smoothing Function (dflt: DEMA)",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "MACD Settings")
+[macdLine, signalLine, hist] = mpbg.macd(sourceMACD, fastLength, slowLength, smoothInput, maTypeMACD)
+plot(showMACD ? macdLine : na, color = color.new(color.blue, 0), linewidth = 1, title = "MACD Line")
+plot(showMACD ? signalLine : na, color = color.new(color.orange, 0), linewidth = 1, title = "MACD Signal")
+hline(showMACD ? 0.0 : na, color = color.gray, linestyle = hline.style_dashed, title = "MACD Zero Level")
+plot(showMACD and ta.crossover(macdLine, signalLine) and barstate.isconfirmed and hist > 0 ? signalLine : na,
+     style = plot.style_circles, linewidth = 4, color = color.aqua, title = "Upside MACD Cross")
+plot(showMACD and ta.crossunder(macdLine, signalLine) and barstate.isconfirmed and hist < 0 ? signalLine : na,
+     style = plot.style_circles, linewidth = 4, color = color.red, title = "Downside MACD Cross")
+
+// QQE Advanced
+rsiPeriod = input.int(10, "RSI Period (dflt: 10 | alt: 8)", step = 1, group = "QQE Settings")
+sf = input.int(14, "SF (dflt: 14 | alt: 1)", step = 1, group = "QQE Settings")
+wp = input.float(2.0, "WP (dflt: 2 | alt: 3)", step = 0.025, group = "QQE Settings")
+sourceQQE = input.source(close, "Source (dflt: close)", group = "QQE Settings")
+maTypeQQE = input.string("EMA", "Smoothing Function (dflt: EMA)",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "QQE Settings")
+rsiTypeQQE = input.string("RSI", "RSI Type (dflt: RSI)", options = ["RSI", "Ehlers' RSIH"], group = "QQE Settings")
+[qqeRsiMa, qqeTrailingLine] = mpbg.qqeLines(sourceQQE, rsiPeriod, sf, wp, maTypeQQE, rsiTypeQQE)
+plot(showQQE ? qqeRsiMa : na, color = color.new(color.purple, 0), linewidth = 1, title = "QQE RSI MA")
+plot(showQQE ? qqeTrailingLine : na, color = color.new(color.green, 0), linewidth = 2, title = "QQE 2nd RSI")
+hline(showQQE and rsiTypeQQE == "RSI" ? 65 : na, color = color.gray, title = "QQE Top Level")
+hline(showQQE and rsiTypeQQE == "RSI" ? 50 : na, color = color.new(color.gray, 30), title = "QQE Centre Level")
+hline(showQQE and rsiTypeQQE == "RSI" ? 35 : na, color = color.gray, title = "QQE Bottom Level")
+
+// RSI + Stochastic
+showRSI = input.bool(true, "Show RSI", group = "RSI Settings")
+rsiLengthInput = input.int(14, minval = 1, title = "RSI Length", group = "RSI Settings")
+rsiSourceInput = input.source(close, "Source (dflt: close)", group = "RSI Settings")
+rsiValue = mpbg.manualRsi(rsiSourceInput, rsiLengthInput)
+rsiPlot = plot(showRSIStoch and showRSI ? rsiValue : na, "RSI", color = color.purple)
+rsiUpperBand = hline(showRSIStoch and showRSI ? 70 : na, "RSI Upper Band", color = #787B86)
+midline = hline(showRSIStoch and showRSI ? 50 : na, "RSI Middle Band", color = color.new(#787B86, 50))
+rsiLowerBand = hline(showRSIStoch and showRSI ? 30 : na, "RSI Lower Band", color = #787B86)
+fill(rsiUpperBand, rsiLowerBand, color = color.rgb(255, 255, 255, 95), title = "RSI Background Fill")
+midLinePlot = plot(showRSIStoch and showRSI ? 50 : na, color = na, editable = false, display = display.none)
+fill(rsiPlot, midLinePlot, 100, 70, top_color = color.new(color.green, 0), bottom_color = color.new(color.green, 100), title = "Overbought Gradient Fill")
+fill(rsiPlot, midLinePlot, 30, 0, top_color = color.new(color.red, 100), bottom_color = color.new(color.red, 0), title = "Oversold Gradient Fill")
+
+maTypeInput = input.string("None", "Smoothing Type", options = ["None", "SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"], group = "RSI Settings", display = display.none)
+maLengthInput = input.int(14, "Smoothing Length", group = "RSI Settings", display = display.none, active = maTypeInput != "None")
+enableMA = maTypeInput != "None"
+smoothingMA = enableMA ? mpbg.ma(rsiValue, maLengthInput, maTypeInput) : na
+plot(showRSIStoch ? smoothingMA : na, "RSI-based MA", color = color.rgb(206, 188, 27), display = enableMA ? display.all : display.none, editable = enableMA)
+
+showStoch = input.bool(true, "Show Stochastic", group = "Stochastic Settings")
+periodK = input.int(14, "%K Length", minval = 1, group = "Stochastic Settings")
+smoothK = input.int(3, "%K Smoothing", minval = 1, group = "Stochastic Settings")
+periodD = input.int(3, "%D Smoothing", minval = 1, group = "Stochastic Settings")
+[k, d] = mpbg.stochastic(periodK, smoothK, periodD)
+plot(showRSIStoch and showStoch ? k : na, title = "RSI %K", color = #2962FF)
+plot(showRSIStoch and showStoch ? d : na, title = "RSI %D", color = #FF6D00)
+h0 = hline(showRSIStoch and showStoch ? 80 : na, "Stochastic Upper Band", color = #787B86)
+hline(showRSIStoch and showStoch ? 50 : na, "Stochastic Middle Band", color = color.new(#787B86, 50))
+h1 = hline(showRSIStoch and showStoch ? 20 : na, "Stochastic Lower Band", color = #787B86)
+fill(h0, h1, color = color.rgb(255, 255, 255, 99), title = "Stochastic Background")
+
+// Weighted Green-Red Count
+weightingType = input.string("WMA", "Weighting MA (dflt: WMA)", options = ["WMA", "HMA"], group = "WGRC Settings")
+wgrcLen = input.int(14, "Length (dflt: 14)", minval = 1, group = "WGRC Settings")
+signalType = input.string("Binary", "Signal Calculation (dflt: Binary)", options = ["Binary", "Candle Body", "Normalised Body"], group = "WGRC Settings")
+showSmooth = input.bool(false, "Show Smoothened WGRC", group = "WGRC Settings")
+smoothingType = input.string("SMA", "Smoothing MA (dflt: SMA)",
+     options = ["SMA", "EMA", "DEMA", "TEMA", "WMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "WGRC Settings")
+smooth = input.int(3, "Smoothing Factor (dflt: 3)", minval = 2, group = "WGRC Settings")
+[wgrc, smoothWgrc] = mpbg.weightedGreenRedCount(wgrcLen, signalType, weightingType, smooth, smoothingType)
+plot(showWGRC ? wgrc : na, "WGRC", color = color.new(color.blue, 0), linewidth = 2)
+plot(showWGRC and showSmooth ? smoothWgrc : na, "Smoothened WGRC", color = color.new(color.orange, 0), linewidth = 2)
+hline(showWGRC ? 0 : na, "Zero Line", color = color.gray, linestyle = hline.style_dashed)
+bullCross = showSmooth and ta.crossover(wgrc, smoothWgrc)
+bearCross = showSmooth and ta.crossunder(wgrc, smoothWgrc)
+plot(showWGRC and bullCross ? smoothWgrc : na, "Bullish Cross", color = color.lime, style = plot.style_circles, linewidth = 4)
+plot(showWGRC and bearCross ? smoothWgrc : na, "Bearish Cross", color = color.red, style = plot.style_circles, linewidth = 4)
+bgcolor(showWGRC ? (wgrc > 0 ? color.new(color.green, 88) : color.new(color.red, 88)) : na)
+
+// Synthetic Oscillator
+soSrc = input.source(close, "Source (dflt: close)", group = "Synthetic Oscillator Settings")
+lb = input.int(15, "Lower Bound", minval = 3, group = "Synthetic Oscillator Settings")
+ub = input.int(25, "Upper Bound", minval = 4, group = "Synthetic Oscillator Settings")
+if lb >= ub
+    runtime.error("The 'Upper Bound' value must be greater than the 'Lower Bound' value.")
+so = mpbg.syntheticOscillator(soSrc, lb, ub)
+plot(showSO ? so : na, "Synthetic Oscillator")
+hline(showSO ? 0 : na, "Synthetic Zero Line")
+
+// ATR
+atrLength = input.int(14, "ATR Length (dflt: 14)", minval = 1, group = "ATR Settings")
+plot(showATR ? ta.atr(atrLength) : na, title = "ATR", color = color.red, linewidth = 1)

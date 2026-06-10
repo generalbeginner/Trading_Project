@@ -1,0 +1,173 @@
+// This Pine Script(R) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// (c) michaelpbgilbride
+
+//@version=6
+indicator("Double QMP Filter + Fibonacci Retracement [Library Refactor]", shorttitle = "2QMP FR Lib", overlay = true)
+import TradingView/ZigZag/7 as zigzag
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+indicatorToggle = input.string("Double QMP", "Which indicator do you want to see?", options = ["Double QMP", "Fibonacci"], group = "INDICATOR SELECTION")
+showQMP = indicatorToggle == "Double QMP"
+showFibonacci = indicatorToggle == "Fibonacci"
+
+sourceMACD = input.source(close, "MACD Source (dflt: close)", group = "Source Settings for QMP FILTER")
+maTypeMACD = input.string("DEMA", "MACD Smoothing (dflt: DEMA)",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "Source Settings for QMP FILTER")
+sourceQQE = input.source(close, "QQE Adv Source (dflt: close)", group = "Source Settings for QMP FILTER")
+maTypeQQE = input.string("EMA", "QQE Smoothing (dflt: EMA)",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "Source Settings for QMP FILTER")
+rsiTypeQQE = input.string("RSI", "QQE RSI Type (dflt: RSI)", options = ["RSI", "Ehlers' RSIH"], group = "Source Settings for QMP FILTER")
+
+fastLength = input.int(12, "Fast (dflt: 12)", step = 1, group = "MACD Settings for QMP FILTER")
+slowLength = input.int(26, "Slow (dflt: 26)", step = 1, group = "MACD Settings for QMP FILTER")
+smoothInput = input.int(9, "Smooth (dflt: 9)", step = 1, group = "MACD Settings for QMP FILTER")
+[macdLine, signalLine, _] = mpbg.macd(sourceMACD, fastLength, slowLength, smoothInput, maTypeMACD)
+
+rsiPeriodA = input.int(8, "RSI Period (dflt: 8)", step = 1, group = "1. QQE Settings for QMP FILTER")
+sfA = input.int(1, "SF (dflt: 1)", step = 1, group = "1. QQE Settings for QMP FILTER")
+wpA = input.float(3.0, "WP (dflt: 3)", step = 0.25, group = "1. QQE Settings for QMP FILTER")
+showSecondQQE = input.bool(true, "Show Second QQE Avd", group = "2. QQE Settings for QMP FILTER")
+rsiPeriodB = input.int(10, "RSI Period (dflt: 10)", step = 1, group = "2. QQE Settings for QMP FILTER")
+sfB = input.int(14, "SF (dflt: 14)", step = 1, group = "2. QQE Settings for QMP FILTER")
+wpB = input.float(2.0, "WP (dflt: 2)", step = 0.25, group = "2. QQE Settings for QMP FILTER")
+[upSwitchA, downSwitchA] = mpbg.qqeQmpSignals(sourceQQE, rsiPeriodA, sfA, wpA, maTypeQQE, rsiTypeQQE, macdLine, signalLine)
+[upSwitchB, downSwitchB] = mpbg.qqeQmpSignals(sourceQQE, rsiPeriodB, sfB, wpB, maTypeQQE, rsiTypeQQE, macdLine, signalLine)
+
+plotchar(showQMP and upSwitchA, char = "*", color = color.rgb(51, 204, 225), size = size.small, location = location.belowbar, title = "1. Buy Signal")
+plotchar(showQMP and downSwitchA, char = "*", color = color.rgb(237, 220, 89), size = size.small, location = location.abovebar, title = "1. Sell Signal")
+plotchar(showQMP and showSecondQQE and upSwitchB ? 1 : na, char = "+", color = color.rgb(51, 164, 216), size = size.small, location = location.belowbar, title = "2. Buy Signal")
+plotchar(showQMP and showSecondQQE and downSwitchB ? 1 : na, char = "+", color = color.rgb(217, 165, 77), size = size.small, location = location.abovebar, title = "2. Sell Signal")
+
+showMAs = input.bool(true, "Show Moving Averages", group = "MA Settings")
+ema50 = ta.ema(close, input.int(50, "Short EMA (dflt: 50)", step = 1, group = "MA Settings"))
+ema100 = ta.ema(close, input.int(100, "Middle EMA (dflt: 100)", step = 1, group = "MA Settings"))
+wma240 = ta.wma(close, input.int(240, "Long WMA (dflt: 240)", step = 1, group = "MA Settings"))
+plot(showQMP and showMAs ? ema50 : na, color = color.orange, title = "Short EMA", linewidth = 2)
+plot(showQMP and showMAs ? ema100 : na, color = color.purple, title = "Middle EMA", linewidth = 2)
+plot(showQMP and showMAs ? wma240 : na, color = color.blue, title = "Long WMA", linewidth = 2)
+
+lengthA = input.int(20, "Length (dflt: 20)", step = 1, minval = 1, group = "1. BOLLINGER BANDS Settings")
+maTypeA = input.string("SMA", "Basis MA Type (dflt: SMA)", options = ["SMA", "EMA", "RMA", "WMA", "VWMA"], group = "1. BOLLINGER BANDS Settings")
+srcA = input(close, "Source (dflt: close)", group = "1. BOLLINGER BANDS Settings")
+multA = input.float(2.0, "Std Dev (dflt: 2.0)", step = 0.25, minval = 0.001, maxval = 50, group = "1. BOLLINGER BANDS Settings")
+colourA = input.color(color.rgb(240, 175, 142), "BB Colour", group = "1. BOLLINGER BANDS Settings")
+colourABack = input.color(color.rgb(240, 175, 142, 96), "BB Background", group = "1. BOLLINGER BANDS Settings")
+[basisA, upperA, lowerA] = mpbg.bollinger(srcA, lengthA, multA, maTypeA)
+plot(showQMP ? basisA : na, "1. BB Basis", color = colourA, style = plot.style_circles)
+p1A = plot(showQMP ? upperA : na, "1. BB Upper", color = colourA, style = plot.style_circles)
+p2A = plot(showQMP ? lowerA : na, "1. BB Lower", color = colourA, style = plot.style_circles)
+fill(p1A, p2A, color = showQMP ? colourABack : na)
+
+showSecondBB = input.bool(false, "Show Second Bollinger Band", group = "2. BOLLINGER BANDS Settings")
+lengthB = input.int(80, "Length (dflt: 80)", step = 1, minval = 1, group = "2. BOLLINGER BANDS Settings")
+maTypeB = input.string("SMA", "Basis MA Type (dflt: SMA)", options = ["SMA", "EMA", "RMA", "WMA", "VWMA"], group = "2. BOLLINGER BANDS Settings")
+srcB = input(close, "Source (dflt: close)", group = "2. BOLLINGER BANDS Settings")
+multB = input.float(3.0, "Std Dev (dflt: 3.0)", step = 0.25, minval = 0.001, maxval = 50, group = "2. BOLLINGER BANDS Settings")
+colourB = input.color(color.rgb(252, 171, 136), "BB Colour", group = "2. BOLLINGER BANDS Settings")
+colourBBack = input.color(color.rgb(252, 171, 136, 96), "BB Background", group = "2. BOLLINGER BANDS Settings")
+[basisB, upperB, lowerB] = mpbg.bollinger(srcB, lengthB, multB, maTypeB)
+plot(showQMP and showSecondBB ? basisB : na, "2. BB Basis", color = colourB, style = plot.style_circles)
+p1B = plot(showQMP and showSecondBB ? upperB : na, "2. BB Upper", color = colourB, style = plot.style_circles)
+p2B = plot(showQMP and showSecondBB ? lowerB : na, "2. BB Lower", color = colourB, style = plot.style_circles)
+fill(p1B, p2B, color = showQMP and showSecondBB ? colourBBack : na)
+
+alertcondition(upSwitchA or upSwitchB, title = "QMP Buy", message = "BUY")
+alertcondition(downSwitchA or downSwitchB, title = "QMP Sell", message = "SELL")
+
+// Auto Fibonacci Retracement
+devTooltip = "Deviation is a multiplier that affects how much the price should deviate from the previous pivot in order for the bar to become a new pivot."
+depthTooltip = "The minimum number of bars that will be taken into account when calculating the indicator."
+thresholdMultiplier = input.float(3, "Deviation", minval = 0, tooltip = devTooltip, group = "Fibonacci Retracement Settings")
+depth = input.int(10, "Depth", minval = 2, tooltip = depthTooltip, group = "Fibonacci Retracement Settings")
+reverse = input(false, "Reverse", display = display.none, group = "Fibonacci Retracement Settings")
+extendLeft = input(false, "Extend Left     |     Extend Right", inline = "Extend Lines", group = "Fibonacci Retracement Settings")
+extendRight = input(true, "", inline = "Extend Lines", group = "Fibonacci Retracement Settings")
+prices = input(true, "Show Prices", display = display.none, group = "Fibonacci Retracement Settings")
+levels = input(true, "Show Levels", inline = "Levels", display = display.none, group = "Fibonacci Retracement Settings")
+levelsFormat = input.string("Values", "", options = ["Values", "Percent"], inline = "Levels", display = display.none, group = "Fibonacci Retracement Settings")
+labelsPosition = input.string("Left", "Labels Position", options = ["Left", "Right"], display = display.none, group = "Fibonacci Retracement Settings")
+backgroundTransparency = input.int(95, "Background Transparency", minval = 0, maxval = 100, display = display.none, group = "Fibonacci Retracement Settings")
+extending = extendLeft and extendRight ? extend.both : extendLeft ? extend.left : extendRight ? extend.right : extend.none
+
+updateFib() =>
+    var settings = zigzag.Settings.new(thresholdMultiplier, depth, color(na), false, false, false, false, "Absolute", true)
+    var zigzag.ZigZag zigZag = zigzag.newInstance(settings)
+    var zigzag.Pivot lastPivot = na
+    var float startPrice = na
+    var float height = na
+    settings.devThreshold := ta.atr(10) / close * 100 * thresholdMultiplier
+    if zigZag.update()
+        lastPivot := zigZag.lastPivot()
+        if not na(lastPivot)
+            var line lastLine = na
+            if na(lastLine)
+                lastLine := line.new(lastPivot.start, lastPivot.end, xloc = xloc.bar_time, color = color.gray, width = 1, style = line.style_dashed)
+            else
+                line.set_first_point(lastLine, lastPivot.start)
+                line.set_second_point(lastLine, lastPivot.end)
+            startPrice := reverse ? lastPivot.start.price : lastPivot.end.price
+            endPrice = reverse ? lastPivot.end.price : lastPivot.start.price
+            height := (startPrice > endPrice ? -1 : 1) * math.abs(startPrice - endPrice)
+    [lastPivot, startPrice, height]
+
+[lastPivot, fibStartPrice, fibHeight] = updateFib()
+
+drawFibLine(price, col) =>
+    var id = line.new(lastPivot.start.time, lastPivot.start.price, time, price, xloc = xloc.bar_time, color = col, width = 1, extend = extending)
+    line.set_xy1(id, lastPivot.start.time, price)
+    line.set_xy2(id, lastPivot.end.time, price)
+    id
+
+drawFibLabel(price, txt, txtColor) =>
+    x = labelsPosition == "Left" ? lastPivot.start.time : not extendRight ? lastPivot.end.time : time
+    labelStyle = labelsPosition == "Left" ? label.style_label_right : label.style_label_left
+    align = labelsPosition == "Left" ? text.align_right : text.align_left
+    labelText = labelsPosition == "Left" ? txt + "\n" : "       " + txt + "\n"
+    var id = label.new(x = x, y = price, xloc = xloc.bar_time, text = labelText, textcolor = txtColor, style = labelStyle, textalign = align, color = #00000000)
+    label.set_xy(id, x, price)
+    label.set_text(id, labelText)
+    label.set_textcolor(id, txtColor)
+
+fibLabelText(level, price) =>
+    levelText = levelsFormat == "Values" ? str.tostring(level) : str.tostring(level * 100) + "%"
+    (levels ? levelText : "") + (prices ? "(" + str.tostring(price, format.mintick) + ")" : "")
+
+processFibLevel(show, value, levelColor, lineIdOther) =>
+    price = mpbg.fibPrice(fibStartPrice, fibHeight, value)
+    crossed = mpbg.crossingLevel(close, price)
+    if showFibonacci and show and not na(lastPivot)
+        lineId = drawFibLine(price, levelColor)
+        drawFibLabel(price, fibLabelText(value, price), levelColor)
+        if crossed
+            alert("Autofib: " + syminfo.ticker + " crossing level " + str.tostring(value))
+        if not na(lineIdOther)
+            linefill.new(lineId, lineIdOther, color = color.new(levelColor, backgroundTransparency))
+        lineId
+    else
+        lineIdOther
+
+showFibNeg618 = input(true, "", inline = "Fib0", display = display.none), valueFibNeg618 = input(-0.618, "", inline = "Fib0", display = display.none), colorFibNeg618 = input(#009688, "", inline = "Fib0", display = display.none)
+showFibNeg382 = input(true, "", inline = "Fib1", display = display.none), valueFibNeg382 = input(-0.382, "", inline = "Fib1", display = display.none), colorFibNeg382 = input(#81c784, "", inline = "Fib1", display = display.none)
+showFibNeg236 = input(true, "", inline = "Fib1", display = display.none), valueFibNeg236 = input(-0.236, "", inline = "Fib1", display = display.none), colorFibNeg236 = input(#f44336, "", inline = "Fib1", display = display.none)
+showFib0 = input(true, "", inline = "Fib2", display = display.none), valueFib0 = input(0.0, "", inline = "Fib2", display = display.none), colorFib0 = input(#787b86, "", inline = "Fib2", display = display.none)
+showFib236 = input(true, "", inline = "Fib2", display = display.none), valueFib236 = input(0.236, "", inline = "Fib2", display = display.none), colorFib236 = input(#f44336, "", inline = "Fib2", display = display.none)
+showFib382 = input(true, "", inline = "Fib3", display = display.none), valueFib382 = input(0.382, "", inline = "Fib3", display = display.none), colorFib382 = input(#81c784, "", inline = "Fib3", display = display.none)
+showFib5 = input(true, "", inline = "Fib3", display = display.none), valueFib5 = input(0.5, "", inline = "Fib3", display = display.none), colorFib5 = input(#4caf50, "", inline = "Fib3", display = display.none)
+showFib618 = input(true, "", inline = "Fib4", display = display.none), valueFib618 = input(0.618, "", inline = "Fib4", display = display.none), colorFib618 = input(#009688, "", inline = "Fib4", display = display.none)
+showFib786 = input(true, "", inline = "Fib4", display = display.none), valueFib786 = input(0.786, "", inline = "Fib4", display = display.none), colorFib786 = input(#64b5f6, "", inline = "Fib4", display = display.none)
+showFib1 = input(true, "", inline = "Fib5", display = display.none), valueFib1 = input(1.0, "", inline = "Fib5", display = display.none), colorFib1 = input(#787b86, "", inline = "Fib5", display = display.none)
+showFib1618 = input(false, "", inline = "Fib5", display = display.none), valueFib1618 = input(1.618, "", inline = "Fib5", display = display.none), colorFib1618 = input(#2962ff, "", inline = "Fib5", display = display.none)
+
+fibLine0 = processFibLevel(showFibNeg618, valueFibNeg618, colorFibNeg618, line(na))
+fibLine1 = processFibLevel(showFibNeg382, valueFibNeg382, colorFibNeg382, fibLine0)
+fibLine2 = processFibLevel(showFibNeg236, valueFibNeg236, colorFibNeg236, fibLine1)
+fibLine3 = processFibLevel(showFib0, valueFib0, colorFib0, fibLine2)
+fibLine4 = processFibLevel(showFib236, valueFib236, colorFib236, fibLine3)
+fibLine5 = processFibLevel(showFib382, valueFib382, colorFib382, fibLine4)
+fibLine6 = processFibLevel(showFib5, valueFib5, colorFib5, fibLine5)
+fibLine7 = processFibLevel(showFib618, valueFib618, colorFib618, fibLine6)
+fibLine8 = processFibLevel(showFib786, valueFib786, colorFib786, fibLine7)
+fibLine9 = processFibLevel(showFib1, valueFib1, colorFib1, fibLine8)
+fibLine10 = processFibLevel(showFib1618, valueFib1618, colorFib1618, fibLine9)

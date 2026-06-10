@@ -1,0 +1,9 @@
+//@version=6
+indicator("Moving Average Stack", shorttitle = "MA Stack", overlay = true)
+
+shortLen = input.int(50, "Short EMA", step = 1)
+middleLen = input.int(100, "Middle EMA", step = 1)
+longLen = input.int(240, "Long WMA", step = 1)
+plot(ta.ema(close, shortLen), color = color.orange, title = "Short EMA", linewidth = 2)
+plot(ta.ema(close, middleLen), color = color.purple, title = "Middle EMA", linewidth = 2)
+plot(ta.wma(close, longLen), color = color.blue, title = "Long WMA", linewidth = 2)

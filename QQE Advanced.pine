@@ -1,0 +1,18 @@
+//@version=6
+indicator("QQE Advanced", shorttitle = "QQE Adv", overlay = false)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+rsiPeriod = input.int(10, "RSI Period", step = 1, group = "QQE Settings")
+sf = input.int(14, "SF", step = 1, group = "QQE Settings")
+wp = input.float(2.0, "WP", step = 0.025, group = "QQE Settings")
+sourceQQE = input.source(close, "Source", group = "QQE Settings")
+maTypeQQE = input.string("EMA", "Smoothing Function",
+     options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "QQE Settings")
+rsiTypeQQE = input.string("RSI", "RSI Type", options = ["RSI", "Ehlers' RSIH"], group = "QQE Settings")
+[rsiMa, trailingLine] = mpbg.qqeLines(sourceQQE, rsiPeriod, sf, wp, maTypeQQE, rsiTypeQQE)
+plot(rsiMa, color = color.new(color.purple, 0), linewidth = 1, title = "QQE RSI MA")
+plot(trailingLine, color = color.new(color.green, 0), linewidth = 2, title = "QQE 2nd RSI")
+hline(rsiTypeQQE == "RSI" ? 65 : na, color = color.gray, title = "QQE Top Level")
+hline(rsiTypeQQE == "RSI" ? 50 : na, color = color.new(color.gray, 30), title = "QQE Centre Level")
+hline(rsiTypeQQE == "RSI" ? 35 : na, color = color.gray, title = "QQE Bottom Level")

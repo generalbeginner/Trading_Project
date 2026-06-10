@@ -1,0 +1,19 @@
+//@version=6
+indicator("Weighted Green-Red Count", shorttitle = "WGRC", overlay = false)
+import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
+
+weightingType = input.string("WMA", "Weighting MA", options = ["WMA", "HMA"], group = "WGRC Settings")
+wgrcLen = input.int(14, "Length", minval = 1, group = "WGRC Settings")
+signalType = input.string("Binary", "Signal Calculation", options = ["Binary", "Candle Body", "Normalised Body"], group = "WGRC Settings")
+showSmooth = input.bool(false, "Show Smoothened WGRC", group = "WGRC Settings")
+smoothingType = input.string("SMA", "Smoothing MA",
+     options = ["SMA", "EMA", "DEMA", "TEMA", "WMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
+     group = "WGRC Settings")
+smooth = input.int(3, "Smoothing Factor", minval = 2, group = "WGRC Settings")
+[wgrc, smoothWgrc] = mpbg.weightedGreenRedCount(wgrcLen, signalType, weightingType, smooth, smoothingType)
+plot(wgrc, "WGRC", color = color.new(color.blue, 0), linewidth = 2)
+plot(showSmooth ? smoothWgrc : na, "Smoothened WGRC", color = color.new(color.orange, 0), linewidth = 2)
+hline(0, "Zero Line", color = color.gray, linestyle = hline.style_dashed)
+plot(showSmooth and ta.crossover(wgrc, smoothWgrc) ? smoothWgrc : na, "Bullish Cross", color = color.lime, style = plot.style_circles, linewidth = 4)
+plot(showSmooth and ta.crossunder(wgrc, smoothWgrc) ? smoothWgrc : na, "Bearish Cross", color = color.red, style = plot.style_circles, linewidth = 4)
+bgcolor(wgrc > 0 ? color.new(color.green, 88) : color.new(color.red, 88))
