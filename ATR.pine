@@ -1,5 +1,0 @@
-//@version=6
-indicator("ATR", shorttitle = "ATR", overlay = false)
-
-atrLength = input.int(14, "ATR Length", minval = 1)
-plot(ta.atr(atrLength), title = "ATR", color = color.red, linewidth = 1)
