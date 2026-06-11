@@ -9,13 +9,9 @@ sourceQQE = input.source(close, "Source", group = "QQE Settings")
 maTypeQQE = input.string("EMA", "Smoothing Function",
      options = ["EMA", "DEMA", "TEMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"],
      group = "QQE Settings")
-rsiTypeQQE = input.string("RSI", "RSI Type", options = ["RSI", "Stochastic RSI", "Ehlers' RSIH"], group = "QQE Settings")
-stochRsiLength = input.int(14, "Stochastic RSI Length", minval = 1, group = "QQE Settings")
-stochRsiSmooth = input.int(3, "Stochastic RSI Smoothing", minval = 1, group = "QQE Settings")
-[rsiMa, trailingLine] = mpbg.qqeLinesAdvanced(sourceQQE, rsiPeriod, sf, wp, maTypeQQE, rsiTypeQQE, stochRsiLength, stochRsiSmooth)
+[rsiMa, trailingLine] = mpbg.qqeLines(sourceQQE, rsiPeriod, sf, wp, maTypeQQE, "RSI")
 plot(rsiMa, color = color.new(color.purple, 0), linewidth = 1, title = "QQE RSI MA")
 plot(trailingLine, color = color.new(color.green, 0), linewidth = 2, title = "QQE 2nd RSI")
-showZeroToHundredLevels = rsiTypeQQE != "Ehlers' RSIH"
-hline(showZeroToHundredLevels ? 65 : na, color = color.gray, title = "QQE Top Level")
-hline(showZeroToHundredLevels ? 50 : na, color = color.new(color.gray, 30), title = "QQE Centre Level")
-hline(showZeroToHundredLevels ? 35 : na, color = color.gray, title = "QQE Bottom Level")
+hline(65, color = color.gray, title = "QQE Top Level")
+hline(50, color = color.new(color.gray, 30), title = "QQE Centre Level")
+hline(35, color = color.gray, title = "QQE Bottom Level")

@@ -2,7 +2,7 @@
 // (c) michaelpbgilbride
 
 //@version=6
-indicator("MQRSWSA [Library Refactor]", shorttitle = "MQRSWSA Lib", overlay = false)
+indicator("MQRSWSA", shorttitle = "Codex", overlay = false)
 import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
 
 indicatorToggle = input.string("MACD Platinum", "Which indicator do you want to see?",
@@ -33,16 +33,12 @@ rsiPeriod = input.int(10, "RSI Period (dflt: 10 | alt: 8)", step = 1, group = "Q
 sf = input.int(14, "SF (dflt: 14 | alt: 1)", step = 1, group = "QQE Settings")
 wp = input.float(2.0, "WP (dflt: 2 | alt: 3)", step = 0.025, group = "QQE Settings")
 sourceQQE = input.source(close, "Source (dflt: close)", group = "QQE Settings")
-rsiTypeQQE = input.string("RSI", "RSI Type (dflt: RSI)", options = ["RSI", "Stochastic RSI", "Ehlers' RSIH"], group = "QQE Settings")
-stochRsiLengthQQE = input.int(14, "Stochastic RSI Length", minval = 1, group = "QQE Settings")
-stochRsiSmoothQQE = input.int(3, "Stochastic RSI Smoothing", minval = 1, group = "QQE Settings")
-[qqeRsiMa, qqeTrailingLine] = mpbg.qqeLinesAdvanced(sourceQQE, rsiPeriod, sf, wp, "EMA", rsiTypeQQE, stochRsiLengthQQE, stochRsiSmoothQQE)
+[qqeRsiMa, qqeTrailingLine] = mpbg.qqeLines(sourceQQE, rsiPeriod, sf, wp, "EMA", "RSI")
 plot(showQQE ? qqeRsiMa : na, color = color.new(color.purple, 0), linewidth = 1, title = "QQE RSI MA")
 plot(showQQE ? qqeTrailingLine : na, color = color.new(color.green, 0), linewidth = 2, title = "QQE 2nd RSI")
-showQQEZeroToHundredLevels = rsiTypeQQE != "Ehlers' RSIH"
-hline(showQQE and showQQEZeroToHundredLevels ? 65 : na, color = color.gray, title = "QQE Top Level")
-hline(showQQE and showQQEZeroToHundredLevels ? 50 : na, color = color.new(color.gray, 30), title = "QQE Centre Level")
-hline(showQQE and showQQEZeroToHundredLevels ? 35 : na, color = color.gray, title = "QQE Bottom Level")
+hline(showQQE ? 65 : na, color = color.gray, title = "QQE Top Level")
+hline(showQQE ? 50 : na, color = color.new(color.gray, 30), title = "QQE Centre Level")
+hline(showQQE ? 35 : na, color = color.gray, title = "QQE Bottom Level")
 
 // RSI + Stochastic
 showRSI = input.bool(true, "Show RSI", group = "RSI Settings")
