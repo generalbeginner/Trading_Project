@@ -33,7 +33,6 @@ The divergence section now focuses on MACD Platinum, QQE Advanced, RSI, Stochast
 - `QQE Advanced.pine`
 - `RSI plus Stochastic.pine`
 - `Weighted Green-Red Count.pine`
-- `Synthetic Oscillator.pine`
 - `ATR.pine`
 - `Bollinger Bands.pine`
 - `Moving Average Stack.pine`

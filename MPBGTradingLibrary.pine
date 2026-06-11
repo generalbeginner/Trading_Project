@@ -190,7 +190,10 @@ export candleSignal(simple string signalType) =>
 
 export weightedGreenRedCount(simple int len, simple string signalType, simple string weightingType, simple int smoothLen, simple string smoothingType) =>
     float signal = candleSignal(signalType)
-    float weighted = weightingType == "HMA" ? hma(signal, len) : ta.wma(signal, len)
+    float weighted = switch weightingType
+        "HMA" => hma(signal, len)
+        "EHMA" => ehma(signal, len)
+        => ta.wma(signal, len)
     float smoothed = ma(weighted, smoothLen, smoothingType)
     [weighted, smoothed]
 

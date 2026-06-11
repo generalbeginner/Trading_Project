@@ -6,10 +6,9 @@ indicator("Double QMP Filter + Fibonacci Retracement + Divergence [Library Refac
 import TradingView/ZigZag/7 as zigzag
 import michaelpbgilbride/MPBGTradingLibrary/1 as mpbg
 
-indicatorToggle = input.string("Double QMP", "Which indicator do you want to see?", options = ["Double QMP", "Fibonacci", "Divergence"], group = "INDICATOR SELECTION")
+indicatorToggle = input.string("Double QMP", "Which indicator do you want to see?", options = ["Double QMP", "Fibonacci"], group = "INDICATOR SELECTION")
 showQMP = indicatorToggle == "Double QMP"
 showFibonacci = indicatorToggle == "Fibonacci"
-showDivergence = indicatorToggle == "Divergence"
 
 sourceMACD = input.source(close, "MACD Source (dflt: close)", group = "Source Settings for QMP FILTER")
 maTypeMACD = input.string("DEMA", "MACD Smoothing (dflt: DEMA)",
@@ -224,7 +223,7 @@ divStochSmoothK = input.int(3, "%K Smoothing", minval = 1, group = "Divergence S
 divStochDLen = input.int(3, "%D Smoothing", minval = 1, group = "Divergence Stochastic")
 divStochValueMode = input.string("%K", "Divergence Value", options = ["%K", "%D", "%K - %D"], group = "Divergence Stochastic")
 
-divWgrcWeighting = input.string("WMA", "Weighting MA", options = ["WMA", "HMA"], group = "Divergence WGRC")
+divWgrcWeighting = input.string("WMA", "Weighting MA", options = ["WMA", "HMA", "EHMA"], group = "Divergence WGRC")
 divWgrcLen = input.int(14, "Length", minval = 1, group = "Divergence WGRC")
 divWgrcSignal = input.string("Binary", "Signal Calculation", options = ["Binary", "Candle Body", "Normalised Body"], group = "Divergence WGRC")
 divWgrcSmoothing = input.string("SMA", "Smoothing MA", options = ["SMA", "EMA", "DEMA", "TEMA", "WMA", "HMA", "EHMA", "Zero-Lag Weak", "SuperSmoother"], group = "Divergence WGRC")
@@ -242,8 +241,8 @@ divHidWidth = input.int(1, "Hidden Divergence Line Width", minval = 1, maxval = 
 
 float divPh = ta.pivothigh(divSourceMode == "Close" ? close : high, divPrd, divPrd)
 float divPl = ta.pivotlow(divSourceMode == "Close" ? close : low, divPrd, divPrd)
-plotshape(showDivergence and divShowPivot ? divPh : na, text = "H", title = "Divergence Pivot High", style = shape.labeldown, color = color.new(color.white, 100), textcolor = color.red, location = location.abovebar, offset = -divPrd)
-plotshape(showDivergence and divShowPivot ? divPl : na, text = "L", title = "Divergence Pivot Low", style = shape.labelup, color = color.new(color.white, 100), textcolor = color.lime, location = location.belowbar, offset = -divPrd)
+plotshape(divShowPivot ? divPh : na, text = "H", title = "Divergence Pivot High", style = shape.labeldown, color = color.new(color.white, 100), textcolor = color.red, location = location.abovebar, offset = -divPrd)
+plotshape(divShowPivot ? divPl : na, text = "L", title = "Divergence Pivot Low", style = shape.labelup, color = color.new(color.white, 100), textcolor = color.lime, location = location.belowbar, offset = -divPrd)
 
 var divPhPositions = array.new_int(20, 0)
 var divPlPositions = array.new_int(20, 0)
@@ -256,7 +255,7 @@ if not na(divPl)
     array.unshift(divPlPositions, bar_index), array.unshift(divPlVals, divPl)
     array.pop(divPlPositions), array.pop(divPlVals)
 
-divPosRegOrNegHid(src, cond) =>
+divPosRegOrPosHid(src, cond) =>
     divlen = 0
     priceSrc = divSourceMode == "Close" ? close : low
     if divDontConfirm or src > src[1] or close > close[1]
@@ -283,7 +282,7 @@ divPosRegOrNegHid(src, cond) =>
                     break
     divlen
 
-divNegRegOrPosHid(src, cond) =>
+divNegRegOrNegHid(src, cond) =>
     divlen = 0
     priceSrc = divSourceMode == "Close" ? close : high
     if divDontConfirm or src < src[1] or close < close[1]
@@ -311,11 +310,11 @@ divNegRegOrPosHid(src, cond) =>
     divlen
 
 divCalculate(enabled, indicator) =>
-    active = showDivergence and enabled
-    posReg = active and (divSearch == "Regular" or divSearch == "Regular & Hidden") ? divPosRegOrNegHid(indicator, 1) : 0
-    negReg = active and (divSearch == "Regular" or divSearch == "Regular & Hidden") ? divNegRegOrPosHid(indicator, 1) : 0
-    posHid = active and (divSearch == "Hidden" or divSearch == "Regular & Hidden") ? divNegRegOrPosHid(indicator, 2) : 0
-    negHid = active and (divSearch == "Hidden" or divSearch == "Regular & Hidden") ? divPosRegOrNegHid(indicator, 2) : 0
+    active = enabled
+    posReg = active and (divSearch == "Regular" or divSearch == "Regular & Hidden") ? divPosRegOrPosHid(indicator, 1) : 0
+    negReg = active and (divSearch == "Regular" or divSearch == "Regular & Hidden") ? divNegRegOrNegHid(indicator, 1) : 0
+    posHid = active and (divSearch == "Hidden" or divSearch == "Regular & Hidden") ? divPosRegOrPosHid(indicator, 2) : 0
+    negHid = active and (divSearch == "Hidden" or divSearch == "Regular & Hidden") ? divNegRegOrNegHid(indicator, 2) : 0
     [posReg, negReg, posHid, negHid]
 
 [divMacdLine, divMacdSignal, divMacdHist] = mpbg.macd(divMacdSrc, divMacdFast, divMacdSlow, divMacdSmooth, divMacdMaType)
@@ -329,43 +328,85 @@ divStochValue = divStochValueMode == "%D" ? divStochD : divStochValueMode == "%K
 divWgrcValue = divWgrcValueMode == "Smoothed WGRC" ? divSmoothWgrc : divWgrcValueMode == "WGRC - Smoothed WGRC" ? divWgrc - divSmoothWgrc : divWgrc
 
 var divNames = array.from("MACD Platinum", "QQE Advanced", "RSI", "Stoch", "WGRC", "External")
+var divColors = array.from(divPosRegColor, divNegRegColor, divPosHidColor, divNegHidColor)
+var divAll = array.new_int(24, 0)
 var divPosLines = array.new_line()
 var divNegLines = array.new_line()
 
-divHandle(idx, enabled, value) =>
+divSet(idx, enabled, value) =>
     [posReg, negReg, posHid, negHid] = divCalculate(enabled, value)
-    hasPos = posReg > 0 or posHid > 0
-    hasNeg = negReg > 0 or negHid > 0
-    total = (posReg > 0 ? 1 : 0) + (negReg > 0 ? 1 : 0) + (posHid > 0 ? 1 : 0) + (negHid > 0 ? 1 : 0)
-    if total >= divShowLimit
-        start = divDontConfirm ? 0 : 1
-        if hasPos
-            len = posReg > 0 ? posReg : posHid
-            col = posReg > 0 ? divPosRegColor : divPosHidColor
-            if divShowLines
-                array.push(divPosLines, line.new(bar_index - len, divSourceMode == "Close" ? close[len] : low[len], bar_index - start, divSourceMode == "Close" ? close[start] : low[start], color = col, style = posReg > 0 ? mpbg.lineStyle(divRegStyleInput) : mpbg.lineStyle(divHidStyleInput), width = posReg > 0 ? divRegWidth : divHidWidth))
-            if divShowLabels
-                label.new(bar_index, math.min((1.0 - divLabelGap) * low, (1.0 - divLabelGap) * low[1]), array.get(divNames, idx), color = col, textcolor = color.white, style = label.style_label_up)
-        if hasNeg
-            len = negReg > 0 ? negReg : negHid
-            col = negReg > 0 ? divNegRegColor : divNegHidColor
-            if divShowLines
-                array.push(divNegLines, line.new(bar_index - len, divSourceMode == "Close" ? close[len] : high[len], bar_index - start, divSourceMode == "Close" ? close[start] : high[start], color = col, style = negReg > 0 ? mpbg.lineStyle(divRegStyleInput) : mpbg.lineStyle(divHidStyleInput), width = negReg > 0 ? divRegWidth : divHidWidth))
-            if divShowLabels
-                label.new(bar_index, math.max((1.0 + divLabelGap) * high, (1.0 + divLabelGap) * high[1]), array.get(divNames, idx), color = col, textcolor = color.white, style = label.style_label_down)
+    array.set(divAll, idx * 4, posReg)
+    array.set(divAll, idx * 4 + 1, negReg)
+    array.set(divAll, idx * 4 + 2, posHid)
+    array.set(divAll, idx * 4 + 3, negHid)
     [posReg > 0, negReg > 0, posHid > 0, negHid > 0]
 
-[divPr0, divNr0, divPh0, divNh0] = divHandle(0, divCalcMacd, divMacdValue)
-[divPr1, divNr1, divPh1, divNh1] = divHandle(1, divCalcQQE, divQqeValue)
-[divPr2, divNr2, divPh2, divNh2] = divHandle(2, divCalcRsi, divRsiValue)
-[divPr3, divNr3, divPh3, divNh3] = divHandle(3, divCalcStoch, divStochValue)
-[divPr4, divNr4, divPh4, divNh4] = divHandle(4, divCalcWGRC, divWgrcValue)
-[divPr5, divNr5, divPh5, divNh5] = divHandle(5, divCalcExt, divExternal)
+[divPr0, divNr0, divPh0, divNh0] = divSet(0, divCalcMacd, divMacdValue)
+[divPr1, divNr1, divPh1, divNh1] = divSet(1, divCalcQQE, divQqeValue)
+[divPr2, divNr2, divPh2, divNh2] = divSet(2, divCalcRsi, divRsiValue)
+[divPr3, divNr3, divPh3, divNh3] = divSet(3, divCalcStoch, divStochValue)
+[divPr4, divNr4, divPh4, divNh4] = divSet(4, divCalcWGRC, divWgrcValue)
+[divPr5, divNr5, divPh5, divNh5] = divSet(5, divCalcExt, divExternal)
 
-divPosRegDetected = divPr0 or divPr1 or divPr2 or divPr3 or divPr4 or divPr5
-divNegRegDetected = divNr0 or divNr1 or divNr2 or divNr3 or divNr4 or divNr5
-divPosHidDetected = divPh0 or divPh1 or divPh2 or divPh3 or divPh4 or divPh5
-divNegHidDetected = divNh0 or divNh1 or divNh2 or divNh3 or divNh4 or divNh5
+divTotal = 0
+for divI = 0 to array.size(divAll) - 1
+    divTotal += array.get(divAll, divI) > 0 ? 1 : 0
+if divTotal < divShowLimit
+    array.fill(divAll, 0)
+
+divTopText = ""
+divBottomText = ""
+divTopCount = 0
+divBottomCount = 0
+divTopColor = color.white
+divBottomColor = color.white
+divDistances = array.new_int(0)
+divStart = divDontConfirm ? 0 : 1
+
+for divIdx = 0 to 5
+    divTopHit = false
+    divBottomHit = false
+    for divType = 0 to 3
+        divLen = array.get(divAll, divIdx * 4 + divType)
+        if divLen > 0
+            isPositive = divType == 0 or divType == 2
+            if isPositive
+                divBottomHit := true
+                divBottomColor := array.get(divColors, divType)
+            else
+                divTopHit := true
+                divTopColor := array.get(divColors, divType)
+            if not array.includes(divDistances, divLen)
+                array.push(divDistances, divLen)
+                if divShowLines
+                    divLine = line.new(bar_index - divLen, isPositive ? low[divLen] : high[divLen], bar_index - divStart, isPositive ? low[divStart] : high[divStart], color = array.get(divColors, divType), style = divType < 2 ? mpbg.lineStyle(divRegStyleInput) : mpbg.lineStyle(divHidStyleInput), width = divType < 2 ? divRegWidth : divHidWidth)
+                    if isPositive
+                        array.push(divPosLines, divLine)
+                    else
+                        array.push(divNegLines, divLine)
+    if divTopHit
+        divTopCount += 1
+        divTopText += array.get(divNames, divIdx) + "\n"
+    if divBottomHit
+        divBottomCount += 1
+        divBottomText += array.get(divNames, divIdx) + "\n"
+
+if divShowLabels
+    if divTopCount > 0
+        label.new(bar_index, math.max((1.0 + divLabelGap) * high, (1.0 + divLabelGap) * high[1]), divTopText + str.tostring(divTopCount), color = divTopColor, textcolor = color.white, style = label.style_label_down)
+    if divBottomCount > 0
+        label.new(bar_index, math.min((1.0 - divLabelGap) * low, (1.0 - divLabelGap) * low[1]), divBottomText + str.tostring(divBottomCount), color = divBottomColor, textcolor = color.white, style = label.style_label_up)
+
+divDetectedType(divType) =>
+    detected = false
+    for divIdx = 0 to 5
+        detected := detected or array.get(divAll, divIdx * 4 + divType) > 0
+    detected
+
+divPosRegDetected = divDetectedType(0)
+divNegRegDetected = divDetectedType(1)
+divPosHidDetected = divDetectedType(2)
+divNegHidDetected = divDetectedType(3)
 alertcondition(divPosRegDetected, title = "Positive Regular Divergence Detected", message = "Positive Regular Divergence Detected")
 alertcondition(divNegRegDetected, title = "Negative Regular Divergence Detected", message = "Negative Regular Divergence Detected")
 alertcondition(divPosHidDetected, title = "Positive Hidden Divergence Detected", message = "Positive Hidden Divergence Detected")
